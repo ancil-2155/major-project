@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "295625387234",
+    "project_id": "acams-e5ac4",
+    "storage_bucket": "acams-e5ac4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295625387234:android:ae6e02faf061195ad542bb",
+        "android_client_info": {
+          "package_name": "com.acams"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHEr2GAbcSJ5F8d8wnQBPSYeKAa4LmpVo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
