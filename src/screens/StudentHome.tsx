@@ -16,6 +16,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import { getProfilePhotoUrl } from '../services/firebase/storageSafeService';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -37,7 +38,10 @@ type FeatureScreen =
   | 'StudentBonafideList'
   | 'ApplyLeave'
   | 'StudentLeaveList'
-  | 'StudentAssignments';
+  | 'StudentLeaveList'
+  | 'StudentAssignments'
+  | 'EventGallery'
+  | 'MyGalleryPosts';
 
 type FeatureItem = {
   id: number;
@@ -53,39 +57,51 @@ const StudentHome: React.FC<StudentHomeProps> = ({ navigation }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    fetchUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchUserData();
   }, []);
 
-  const fetchUser = async () => {
-    const uid = auth().currentUser?.uid;
-    if (!uid) return;
-
-    const doc = await firestore().collection('users').doc(uid).get();
-    setUserData(doc.data());
-    setLoading(false);
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
+  const fetchUserData = async () => {
+    try {
+      const user = auth().currentUser;
+      if (user) {
+        const doc = await firestore().collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          const data = doc.data();
+          setUserData(data);
+          
+          // Safely load profile photo URL
+          const safeUrl = await getProfilePhotoUrl(data);
+          setProfilePhotoUrl(safeUrl);
+        }
+      }
+    } catch (e) {
+      console.log('Error fetching user:', e);
+    } finally {
+      setLoading(false);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }).start();
+    }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchUser();
+    await fetchUserData();
     setRefreshing(false);
   };
 
   const features: FeatureItem[] = [
     { id: 1, title: 'Join Meeting', icon: '🎥', gradient: ['#4ECDC4', '#44A08D'], screen: 'MeetingViewer' },
     { id: 2, title: 'Library', icon: '📚', gradient: ['#667eea', '#764ba2'], screen: 'Library' },
-    { id: 3, title: 'Gallery', icon: '🖼️', gradient: ['#f093fb', '#f5576c'], screen: 'Gallery' },
+    { id: 3, title: 'Event Gallery', icon: '🖼️', gradient: ['#f093fb', '#f5576c'], screen: 'EventGallery' as FeatureScreen },
+    { id: 31, title: 'My Posts', icon: '📝', gradient: ['#FCA5A5', '#EF4444'], screen: 'MyGalleryPosts' as FeatureScreen },
     { id: 4, title: 'Academic', icon: '📅', gradient: ['#4facfe', '#00f2fe'], screen: 'TimetableMenu' },
     { id: 5, title: 'Results', icon: '📊', gradient: ['#fa709a', '#fee140'], screen: 'ViewResults' },
     { id: 6, title: 'Teachers', icon: '👨‍🏫', gradient: ['#a18cd1', '#fbc2eb'], screen: 'TeacherGroups' },
@@ -120,7 +136,7 @@ const StudentHome: React.FC<StudentHomeProps> = ({ navigation }) => {
   icon: '📝',
   gradient: ['#f59e0b', '#f97316'],
   screen: 'StudentAssignments',
-}
+},
   ];
 
   if (loading) {
@@ -149,17 +165,22 @@ const StudentHome: React.FC<StudentHomeProps> = ({ navigation }) => {
                   <Text style={styles.name}>{userData?.name || 'Student'} 👋</Text>
                 </View>
 
-                <TouchableOpacity onPress={() => setProfileOpen(true)}>
-                  {userData?.faces?.[0] ? (
-                    <Image source={{ uri: userData.faces[0] }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>
-                        {userData?.name?.charAt(0) || 'S'}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.headerRight}>
+                  <TouchableOpacity onPress={() => navigation.navigate('StudentSettings' as any)} style={styles.gearButton}>
+                    <Text style={styles.gearIcon}>⚙️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => navigation.navigate('StudentProfile' as any)}>
+                    {profilePhotoUrl ? (
+                      <Image source={{ uri: profilePhotoUrl }} style={styles.avatar} />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarText}>
+                          {userData?.name?.charAt(0) || 'S'}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </LinearGradient>
           </Animated.View>
@@ -188,28 +209,8 @@ const StudentHome: React.FC<StudentHomeProps> = ({ navigation }) => {
             <Text style={styles.bonafideText}>📜 Apply Bonafide Certificate</Text>
           </TouchableOpacity>
 
-          {/* LOGOUT */}
-          <TouchableOpacity
-            style={styles.logout}
-            onPress={() => navigation.replace('Login')}
-          >
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
+          {/* LOGOUT IN SETTINGS NOW */}
         </ScrollView>
-
-        {/* PROFILE MODAL */}
-        <Modal visible={profileOpen} transparent animationType="slide">
-          <View style={styles.modal}>
-            <View style={styles.modalContent}>
-              <Text style={styles.name}>{userData?.name}</Text>
-              <Text>{userData?.email}</Text>
-
-              <TouchableOpacity onPress={() => setProfileOpen(false)}>
-                <Text style={styles.closeText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </View>
     </>
   );
@@ -317,5 +318,21 @@ const styles = StyleSheet.create({
   },
   closeText: {
     marginTop: 20,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  gearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gearIcon: {
+    fontSize: 20,
   },
 });

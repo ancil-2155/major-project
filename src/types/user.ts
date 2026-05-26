@@ -9,19 +9,41 @@ export interface FaceEmbeddingsDoc {
   modelName: "facenet" | "mobilefacenet";
   modelVersion: "v1";
   qualityScore: number;
-  createdAt: FirebaseFirestoreTypes.Timestamp | any;
-  updatedAt: FirebaseFirestoreTypes.Timestamp | any;
+  createdAt: FirebaseFirestoreTypes.Timestamp | Date | any;
+  updatedAt: FirebaseFirestoreTypes.Timestamp | Date | any;
 }
+
+export type UserRole = 'student' | 'teacher' | 'parent' | 'admin';
+export type UserStatus = 'active' | 'pending' | 'approved' | 'rejected' | 'suspended';
 
 export interface User {
   uid: string;
   name: string;
   email: string;
-  year: string;
-  department: string;
-  role: 'student' | 'teacher' | 'parent' | 'admin';
+  phone?: string;
+  role: UserRole;
+  status?: UserStatus;
+  isApproved?: boolean;
+  
+  // Specific to Student/Teacher
+  department?: string;
+  year?: string;
+  semester?: string;
+  qualification?: string;
+
+  // Enrollment fields
   profilePhotoUrl?: string;
-  faceEnrollmentStatus?: boolean; // Set to true after successful enrollment
-  createdAt?: FirebaseFirestoreTypes.Timestamp | any;
-  updatedAt?: FirebaseFirestoreTypes.Timestamp | any;
+  faceEnrollmentStatus?: boolean; 
+  
+  // Approval tracking (Teacher specific primarily)
+  approvedBy?: string;
+  approvedAt?: FirebaseFirestoreTypes.Timestamp | Date | any;
+  rejectedBy?: string;
+  rejectedAt?: FirebaseFirestoreTypes.Timestamp | Date | any;
+  rejectionReason?: string;
+  suspendedBy?: string;
+  suspendedAt?: FirebaseFirestoreTypes.Timestamp | Date | any;
+
+  createdAt?: FirebaseFirestoreTypes.Timestamp | Date | any;
+  updatedAt?: FirebaseFirestoreTypes.Timestamp | Date | any;
 }

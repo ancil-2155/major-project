@@ -18,8 +18,16 @@ export type RootStackParamList = {
   Signup: undefined;
   FaceEnrollment: { userData: any };
   AdminHome: undefined;
+  TeacherApprovals: undefined;
+  UserManagement: undefined;
+  AttendanceAnalytics: undefined;
+  NoticeManager: undefined;
+  ClassManager: undefined;
+  AdminSettings: undefined;
+  PendingApproval: undefined;
+  RejectedTeacher: { reason?: string };
+  SuspendedAccount: undefined;
   AdminAttendance: undefined;
-  AdminApprove: undefined;
   UploadResult: undefined;
   ViewResults: undefined;
   Library: undefined;
@@ -33,7 +41,6 @@ export type RootStackParamList = {
   FaceCapture: undefined;
   TakeAttendance: undefined;
   ApplyBonafide: undefined;
-  AdminApprove: undefined;
   TeacherRequests: undefined;
   TeacherSignature: undefined;
   BonafideDocument: any;
@@ -41,14 +48,24 @@ export type RootStackParamList = {
   ApplyLeave: undefined;
   TeacherLeaveRequests: undefined;
   StudentLeaveList: undefined;
+  StudentProfile: undefined;
+  StudentSettings: undefined;
+  BonafideCertificateView: { certificate: any };
   CreateAssignment: undefined;
   StudentAssignments: undefined;
-  SubmitAssignment: { id: string; title: string };
+  TeacherAttendanceSetup: undefined;
+  TeacherLiveAttendance: any;
+  AttendanceReview: any;
+  EventGallery: undefined;
+  CreateGalleryPost: undefined;
+  MyGalleryPosts: undefined;
 };
 import StudentHome from '../screens/StudentHome';
 import TeacherHome from '../screens/TeacherHome';
 import ParentHome from '../screens/ParentHome';
-import GalleryScreen from '../screens/GalleryScreen';
+import EventGalleryScreen from '../screens/gallery/EventGalleryScreen';
+import CreateGalleryPostScreen from '../screens/gallery/CreateGalleryPostScreen';
+import MyGalleryPostsScreen from '../screens/gallery/MyGalleryPostsScreen';
 import TimetableMenuScreen from '../screens/TimetableMenuScreen';
 import TimetableScreen from '../screens/TimetableScreen';
 import CreateMeetingScreen from '../screens/CreateMeetingScreen';
@@ -69,7 +86,7 @@ import FaceCaptureScreen from '../screens/FaceCaptureScreen';
 import AttendanceScreen from '../screens/AttendenceScreen';
 import ApplyBonafideScreen from '../screens/ApplyBonafideScreen';
 import AdminHomeScreen from '../screens/admin/AdminHomeScreen';
-import AdminApproveScreen from '../screens/admin/AdminApproveScreen';
+// AdminApproveScreen removed — replaced by TeacherApprovalsScreen
 import AdminAttendanceScreen from '../screens/admin/AdminAttendanceScreen';
 import TeacherRequestsScreen from '../screens/TeacherRequestsScreen';
 import TeacherSignatureScreen from '../screens/TeacherSignatureScreen';
@@ -77,8 +94,35 @@ import StudentBonafideListScreen from '../screens/StudentBonafideListScreen';
 import ApplyLeaveScreen from '../screens/ApplyLeaveScreen';
 import TeacherLeaveRequestsScreen from '../screens/TeacherLeaveRequestsScreen';
 import StudentLeaveListScreen from '../screens/StudentLeaveListScreen';
+import StudentProfileScreen from '../screens/StudentProfileScreen';
+import StudentSettingsScreen from '../screens/StudentSettingsScreen';
+import BonafideCertificateViewScreen from '../screens/BonafideCertificateViewScreen';
 import CreateAssignmentScreen from '../screens/CreateAssignmentScreen';
 import StudentAssignmentListScreen from '../screens/StudentAssignmentListScreen';
+import TeacherAttendanceSetupScreen from '../screens/TeacherAttendanceSetupScreen';
+import TeacherLiveAttendanceScreen from '../screens/TeacherLiveAttendanceScreen';
+import AttendanceReviewScreen from '../screens/AttendanceReviewScreen';
+
+import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
+import RejectedTeacherScreen from '../screens/auth/RejectedTeacherScreen';
+import SuspendedAccountScreen from '../screens/auth/SuspendedAccountScreen';
+
+import TeacherApprovalsScreen from '../screens/admin/TeacherApprovalsScreen';
+import UserManagementScreen from '../screens/admin/UserManagementScreen';
+import AttendanceAnalyticsScreen from '../screens/admin/AttendanceAnalyticsScreen';
+import NoticeManagerScreen from '../screens/admin/NoticeManagerScreen';
+import ClassManagerScreen from '../screens/admin/ClassManagerScreen';
+import AdminSettingsScreen from '../screens/admin/AdminSettingsScreen';
+import ErrorBoundary from '../components/common/ErrorBoundary';
+
+// Helper to wrap any screen component with ErrorBoundary
+const withErrorBoundary = (ScreenComponent: React.ComponentType<any>) => {
+  return (props: any) => (
+    <ErrorBoundary navigation={props.navigation}>
+      <ScreenComponent {...props} />
+    </ErrorBoundary>
+  );
+};
 
 
 
@@ -92,7 +136,9 @@ const AppNavigator = () => {
         <Stack.Screen name="StudentHome" component={StudentHome} />
         <Stack.Screen name="TeacherHome" component={TeacherHome} />
         <Stack.Screen name="ParentHome" component={ParentHome} />
-        <Stack.Screen name="Gallery" component={GalleryScreen} />
+        <Stack.Screen name="EventGallery" component={EventGalleryScreen} />
+        <Stack.Screen name="CreateGalleryPost" component={CreateGalleryPostScreen} />
+        <Stack.Screen name="MyGalleryPosts" component={MyGalleryPostsScreen} />
         <Stack.Screen name="TimetableMenu" component={TimetableMenuScreen} />
         <Stack.Screen name="TimetableScreen" component={TimetableScreen} />
         <Stack.Screen name="CreateMeeting" component={CreateMeetingScreen} />
@@ -115,8 +161,16 @@ const AppNavigator = () => {
   component={AttendanceScreen} 
 />
 <Stack.Screen name="ApplyBonafide" component={ApplyBonafideScreen} />
-<Stack.Screen name="AdminHome" component={AdminHomeScreen} />
-<Stack.Screen name="AdminApprove" component={AdminApproveScreen} />
+<Stack.Screen name="AdminHome" component={withErrorBoundary(AdminHomeScreen)} />
+<Stack.Screen name="TeacherApprovals" component={withErrorBoundary(TeacherApprovalsScreen)} />
+<Stack.Screen name="UserManagement" component={withErrorBoundary(UserManagementScreen)} />
+<Stack.Screen name="AttendanceAnalytics" component={withErrorBoundary(AttendanceAnalyticsScreen)} />
+<Stack.Screen name="NoticeManager" component={withErrorBoundary(NoticeManagerScreen)} />
+<Stack.Screen name="ClassManager" component={withErrorBoundary(ClassManagerScreen)} />
+<Stack.Screen name="AdminSettings" component={withErrorBoundary(AdminSettingsScreen)} />
+<Stack.Screen name="PendingApproval" component={PendingApprovalScreen} />
+<Stack.Screen name="RejectedTeacher" component={RejectedTeacherScreen} />
+<Stack.Screen name="SuspendedAccount" component={SuspendedAccountScreen} />
 <Stack.Screen name="AdminAttendance" component={AdminAttendanceScreen} />
 <Stack.Screen
   name="TeacherRequests"
@@ -137,6 +191,9 @@ const AppNavigator = () => {
   name="StudentLeaveList"
   component={StudentLeaveListScreen}
 />
+<Stack.Screen name="StudentProfile" component={StudentProfileScreen} />
+<Stack.Screen name="StudentSettings" component={StudentSettingsScreen} />
+<Stack.Screen name="BonafideCertificateView" component={BonafideCertificateViewScreen} />
 <Stack.Screen
   name="CreateAssignment"
   component={CreateAssignmentScreen}
@@ -145,6 +202,9 @@ const AppNavigator = () => {
   name="StudentAssignments"
   component={StudentAssignmentListScreen}
 />
+<Stack.Screen name="TeacherAttendanceSetup" component={TeacherAttendanceSetupScreen} />
+<Stack.Screen name="TeacherLiveAttendance" component={TeacherLiveAttendanceScreen} />
+<Stack.Screen name="AttendanceReview" component={AttendanceReviewScreen} />
 
 
       </Stack.Navigator>

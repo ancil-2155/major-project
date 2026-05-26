@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
@@ -37,19 +38,47 @@ const LoginScreen = ({ navigation }: any) => {
         return;
       }
 
-      if (data.role === 'teacher' && data.approved !== true) {
-        Alert.alert('Pending Approval', 'Your account is waiting for admin approval');
-        return;
+      if (data.role === 'teacher') {
+        if (data.status === 'pending' || (!data.status && data.isApproved === false)) {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'PendingApproval' }],
+            })
+          );
+          return;
+        } else if (data.status === 'rejected') {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'RejectedTeacher', params: { reason: data.rejectionReason } }],
+            })
+          );
+          return;
+        } else if (data.status === 'suspended') {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'SuspendedAccount' }],
+            })
+          );
+          return;
+        }
       }
 
-      if (data.role === 'admin') {
-        navigation.replace('AdminHome');
-      } else if (data.role === 'teacher') {
-        navigation.replace('TeacherHome');
-      } else if (data.role === 'student') {
-        navigation.replace('StudentHome');
-      } else if (data.role === 'parent') {
-        navigation.replace('ParentHome');
+      let routeName = '';
+      if (data.role === 'admin') routeName = 'AdminHome';
+      else if (data.role === 'teacher') routeName = 'TeacherHome';
+      else if (data.role === 'student') routeName = 'StudentHome';
+      else if (data.role === 'parent') routeName = 'ParentHome';
+
+      if (routeName) {
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: routeName }],
+          })
+        );
       } else {
         Alert.alert('Error', 'Unknown role');
       }

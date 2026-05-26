@@ -21,13 +21,13 @@ export const saveUserRecord = async (user: User): Promise<void> => {
  * Saves the protected Face Embeddings document to Firestore.
  * This is isolated from the users collection for security.
  */
-export const saveFaceEmbeddings = async (uid: string, embeddingsData: Omit<FaceEmbeddingsDoc, 'uid' | 'createdAt' | 'updatedAt'>): Promise<void> => {
+export const saveFaceEmbeddings = async (uid: string, embeddingsData: any): Promise<void> => {
   const embedRef = firestore().collection(EMBEDDINGS_COLLECTION).doc(uid);
   
   await embedRef.set({
-    uid,
+    studentId: uid, // Use studentId as explicitly requested for fallback querying
     ...embeddingsData,
     createdAt: firestore.FieldValue.serverTimestamp(),
     updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
+  }, { merge: true });
 };

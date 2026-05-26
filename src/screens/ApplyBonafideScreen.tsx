@@ -19,6 +19,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import { getApprovedTeachersForStudent, TeacherOption } from '../services/student/teacherSelectionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,9 +30,12 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
   const [userData, setUserData] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [requestId, setRequestId] = useState('');
-  const [teachers, setTeachers] = useState<any[]>([]);
-  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+  
+  const [teachers, setTeachers] = useState<TeacherOption[]>([]);
+  const [selectedTeacher, setSelectedTeacher] = useState<TeacherOption | null>(null);
   const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  
   const [step, setStep] = useState(1); // Step 1: Details, Step 2: Teacher Selection
   
   // Animation values
@@ -40,8 +44,7 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
   useEffect(() => {
-    fetchUserData();
-    fetchTeachers();
+    fetchInitialData();
     startAnimations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -67,40 +70,22 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
     ]).start();
   };
 
-  const fetchUserData = async () => {
+  const fetchInitialData = async () => {
     try {
       const user = auth().currentUser;
       if (!user) return;
 
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .get();
-
-      setUserData(userDoc.data());
+      const userDoc = await firestore().collection('users').doc(user.uid).get();
+      const profile = userDoc.data();
+      setUserData(profile);
+      
+      setLoadingTeachers(true);
+      const teacherList = await getApprovedTeachersForStudent(profile);
+      setTeachers(teacherList);
     } catch (error) {
-      console.log('Error fetching user data:', error);
-    }
-  };
-
-  const fetchTeachers = async () => {
-    try {
-      const teachersSnapshot = await firestore()
-        .collection('users')
-        .where('role', '==', 'teacher')
-        .where('approved', '==', true)
-        .get();
-
-      const teachersList: any[] = [];
-      teachersSnapshot.forEach(doc => {
-        teachersList.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      setTeachers(teachersList);
-    } catch (error) {
-      console.log('Error fetching teachers:', error);
+      console.log('Error fetching initial data:', error);
+    } finally {
+      setLoadingTeachers(false);
     }
   };
 
@@ -128,37 +113,28 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
 
       setLoading(true);
 
-      // Fetch user data if not already loaded
-      let data = userData;
-      if (!data) {
-        const userDoc = await firestore()
-          .collection('users')
-          .doc(user.uid)
-          .get();
-        data = userDoc.data();
-      }
-
-      if (!data) {
-        Alert.alert('Error', 'User data not found');
-        setLoading(false);
-        return;
-      }
-
-      // Save bonafide request with teacherId
       const docRef = await firestore().collection('bonafide_requests').add({
         studentId: user.uid,
-        studentName: data.name || 'N/A',
-        rollNo: data.rollNo || 'N/A',
-        department: data.department || 'N/A',
-        year: data.year || 'N/A',
-        section: data.section || 'N/A',
+        studentName: userData?.name || 'N/A',
+        studentEmail: userData?.email || user.email || 'N/A',
+        rollNo: userData?.rollNo || 'N/A',
+        department: userData?.department || 'N/A',
+        year: userData?.year || 'N/A',
+        section: userData?.section || 'N/A',
+        
         purpose: purpose.trim(),
         additionalInfo: additionalInfo.trim(),
-        teacherId: selectedTeacher.id, // 🔥 IMPORTANT - Add teacherId
+        
+        teacherId: selectedTeacher.uid,
         teacherName: selectedTeacher.name,
-        teacherDepartment: selectedTeacher.department,
+        teacherEmail: selectedTeacher.email,
+        teacherDepartment: selectedTeacher.department || '',
+        
         status: 'pending',
+        signatureAttached: false,
         createdAt: firestore.FieldValue.serverTimestamp(),
+        requestedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
       });
 
       setRequestId(docRef.id);
@@ -193,11 +169,11 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
     setPurpose(selectedPurpose);
   };
 
-  const renderTeacherItem = ({ item }: { item: any }) => (
+  const renderTeacherItem = ({ item }: { item: TeacherOption }) => (
     <TouchableOpacity
       style={[
         styles.teacherCard,
-        selectedTeacher?.id === item.id && styles.teacherCardActive
+        selectedTeacher?.uid === item.uid && styles.teacherCardActive
       ]}
       onPress={() => {
         setSelectedTeacher(item);
@@ -216,11 +192,11 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
         </LinearGradient>
       </View>
       <View style={styles.teacherInfo}>
-        <Text style={styles.teacherName}>{item.name || 'Unknown'}</Text>
+        <Text style={styles.teacherName}>{item.name}</Text>
         <Text style={styles.teacherDetail}>{item.department || 'Department'}</Text>
-        <Text style={styles.teacherDetail}>Year Incharge: {item.yearIncharge || 'N/A'}</Text>
+        {item.yearIncharge ? <Text style={styles.teacherDetail}>Year Incharge: {item.yearIncharge}</Text> : null}
       </View>
-      {selectedTeacher?.id === item.id && (
+      {selectedTeacher?.uid === item.uid && (
         <View style={styles.teacherCheck}>
           <Text style={styles.teacherCheckText}>✓</Text>
         </View>
@@ -370,10 +346,8 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
                     end={{ x: 1, y: 0 }}
                     style={styles.buttonGradient}
                   >
-                    <>
-                      <Text style={styles.buttonIcon}>➡️</Text>
-                      <Text style={styles.buttonText}>Next: Select Teacher</Text>
-                    </>
+                    <Text style={styles.buttonIcon}>➡️</Text>
+                    <Text style={styles.buttonText}>Next: Select Teacher</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </Animated.View>
@@ -419,24 +393,31 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
                   style={styles.selectTeacherButton}
                   onPress={() => setShowTeacherModal(true)}
                   activeOpacity={0.7}
+                  disabled={loadingTeachers}
                 >
                   <LinearGradient
                     colors={['#667eea', '#764ba2']}
                     style={styles.selectTeacherGradient}
                   >
-                    <Text style={styles.selectTeacherIcon}>👨‍🏫</Text>
-                    <Text style={styles.selectTeacherText}>Choose a Teacher</Text>
+                    {loadingTeachers ? (
+                      <Text style={styles.selectTeacherText}>Loading Teachers...</Text>
+                    ) : (
+                      <>
+                        <Text style={styles.selectTeacherIcon}>👨‍🏫</Text>
+                        <Text style={styles.selectTeacherText}>Choose a Teacher</Text>
+                      </>
+                    )}
                   </LinearGradient>
                 </TouchableOpacity>
               )}
 
-              {/* Teacher List (if no modal) */}
+              {/* Teacher List (if no modal and not selected) */}
               {teachers.length > 0 && !selectedTeacher && (
                 <View style={styles.teacherListContainer}>
-                  <Text style={styles.teacherListTitle}>Available Teachers:</Text>
-                  {teachers.map((teacher) => (
+                  <Text style={styles.teacherListTitle}>Recommended Teachers:</Text>
+                  {teachers.slice(0, 3).map((teacher) => (
                     <TouchableOpacity
-                      key={teacher.id}
+                      key={teacher.uid}
                       style={styles.teacherCard}
                       onPress={() => setSelectedTeacher(teacher)}
                       activeOpacity={0.7}
@@ -454,10 +435,14 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
                       <View style={styles.teacherInfo}>
                         <Text style={styles.teacherName}>{teacher.name || 'Unknown'}</Text>
                         <Text style={styles.teacherDetail}>{teacher.department || 'Department'}</Text>
-                        <Text style={styles.teacherDetail}>Year Incharge: {teacher.yearIncharge || 'N/A'}</Text>
                       </View>
                     </TouchableOpacity>
                   ))}
+                  {teachers.length > 3 && (
+                     <TouchableOpacity onPress={() => setShowTeacherModal(true)}>
+                       <Text style={{color: '#667eea', textAlign: 'center', marginTop: 10}}>View all {teachers.length} teachers</Text>
+                     </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -492,15 +477,6 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
-
-              {/* Info Note */}
-              <View style={styles.noteContainer}>
-                <Text style={styles.noteIcon}>ℹ️</Text>
-                <Text style={styles.noteText}>
-                  Your request will be sent to the selected teacher for approval. 
-                  Once approved, you will receive your bonafide certificate.
-                </Text>
-              </View>
             </Animated.View>
           )}
         </ScrollView>
@@ -525,13 +501,13 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
               
               <FlatList
                 data={teachers}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => item.uid}
                 renderItem={renderTeacherItem}
                 contentContainerStyle={styles.teacherModalList}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                   <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No teachers available</Text>
+                    <Text style={styles.emptyText}>No approved teachers found. Please contact admin.</Text>
                   </View>
                 }
               />
@@ -584,472 +560,92 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 30,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    position: 'relative',
-  },
-  backButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
-    marginTop: 20,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#CBD5E1',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-    paddingHorizontal: 20,
-  },
-  stepDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E5E7EB',
-  },
-  stepDotActive: {
-    backgroundColor: '#11998e',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-  },
-  stepLine: {
-    width: 60,
-    height: 2,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 8,
-  },
-  stepLineActive: {
-    backgroundColor: '#11998e',
-  },
-  infoCard: {
-    backgroundColor: '#fff',
-    margin: 20,
-    marginTop: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a202c',
-    marginBottom: 16,
-  },
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  infoItem: {
-    width: '48%',
-    marginBottom: 12,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  formSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a202c',
-    marginBottom: 8,
-  },
-  subSectionText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 20,
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 20,
-    gap: 10,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  chipActive: {
-    backgroundColor: '#11998e',
-    borderColor: '#11998e',
-  },
-  chipText: {
-    fontSize: 13,
-    color: '#4B5563',
-  },
-  chipTextActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-    marginTop: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    fontSize: 14,
-    color: '#1F2937',
-    textAlignVertical: 'top',
-  },
-  textArea: {
-    minHeight: 100,
-  },
-  button: {
-    marginTop: 24,
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#11998e',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 12,
-  },
-  buttonIcon: {
-    fontSize: 20,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  selectedTeacherCard: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  selectedTeacherTitle: {
-    fontSize: 12,
-    color: '#166534',
-    marginBottom: 8,
-  },
-  selectedTeacherInfo: {
-    marginBottom: 12,
-  },
-  selectedTeacherName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#14532D',
-  },
-  selectedTeacherDept: {
-    fontSize: 14,
-    color: '#166534',
-    marginTop: 4,
-  },
-  changeTeacherButton: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#DC2626',
-    borderRadius: 8,
-  },
-  changeTeacherText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  selectTeacherButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 20,
-  },
-  selectTeacherGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    gap: 12,
-  },
-  selectTeacherIcon: {
-    fontSize: 32,
-  },
-  selectTeacherText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  teacherListContainer: {
-    marginBottom: 20,
-  },
-  teacherListTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 12,
-  },
-  teacherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  teacherCardActive: {
-    borderColor: '#11998e',
-    backgroundColor: '#F0FDF4',
-  },
-  teacherAvatar: {
-    marginRight: 12,
-  },
-  teacherAvatarGradient: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  teacherAvatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  teacherInfo: {
-    flex: 1,
-  },
-  teacherName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-  },
-  teacherDetail: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  teacherCheck: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#11998e',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  teacherCheckText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  stepButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  stepButton: {
-    flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  backStepButton: {
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  backStepButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  submitStepButton: {
-    flex: 2,
-  },
-  submitGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 12,
-  },
-  noteContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FEF3C7',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 20,
-    gap: 10,
-  },
-  noteIcon: {
-    fontSize: 16,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 18,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  teacherModalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    width: width - 40,
-    maxHeight: height * 0.8,
-    overflow: 'hidden',
-  },
-  teacherModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-  },
-  teacherModalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  teacherModalClose: {
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  teacherModalList: {
-    padding: 16,
-  },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  successModal: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    width: width - 48,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  successIconContainer: {
-    marginBottom: 20,
-  },
-  successIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  successIconText: {
-    fontSize: 40,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  successTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1a202c',
-    marginBottom: 12,
-  },
-  successMessage: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  requestIdText: {
-    fontSize: 12,
-    color: '#11998e',
-    fontWeight: '600',
-    marginBottom: 24,
-  },
-  modalButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  modalButtonGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  scrollContent: { flexGrow: 1 },
+  header: { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 30, paddingHorizontal: 24, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, position: 'relative' },
+  backButton: { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 40, left: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  backIcon: { fontSize: 24, color: '#fff', fontWeight: 'bold' },
+  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center', marginTop: 20 },
+  headerSubtitle: { fontSize: 14, color: '#CBD5E1', textAlign: 'center', marginTop: 8 },
+  stepIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 20, paddingHorizontal: 20 },
+  stepDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#E5E7EB' },
+  stepDotActive: { backgroundColor: '#11998e', width: 16, height: 16, borderRadius: 8 },
+  stepLine: { width: 60, height: 2, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
+  stepLineActive: { backgroundColor: '#11998e' },
+  infoCard: { backgroundColor: '#fff', margin: 20, marginTop: 20, borderRadius: 20, padding: 20, elevation: 5 },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1a202c', marginBottom: 16 },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  infoItem: { width: '48%', marginBottom: 12 },
+  infoLabel: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  infoValue: { fontSize: 14, fontWeight: '600', color: '#1F2937' },
+  formSection: { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#1a202c', marginBottom: 8 },
+  subSectionText: { fontSize: 14, color: '#6B7280', marginBottom: 20 },
+  chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20, gap: 10 },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  chipActive: { backgroundColor: '#11998e', borderColor: '#11998e' },
+  chipText: { fontSize: 13, color: '#4B5563' },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
+  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 8 },
+  input: { borderWidth: 1, borderColor: '#E5E7EB', padding: 14, borderRadius: 12, backgroundColor: '#fff', fontSize: 14, color: '#1F2937', textAlignVertical: 'top' },
+  textArea: { minHeight: 100 },
+  button: { marginTop: 24, borderRadius: 12, overflow: 'hidden', elevation: 5 },
+  buttonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 12 },
+  buttonIcon: { fontSize: 20 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  
+  // Step 2 Styles
+  selectedTeacherCard: { backgroundColor: '#F0FDF4', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#86EFAC' },
+  selectedTeacherTitle: { fontSize: 12, color: '#166534', marginBottom: 8 },
+  selectedTeacherInfo: { marginBottom: 12 },
+  selectedTeacherName: { fontSize: 16, fontWeight: 'bold', color: '#14532D' },
+  selectedTeacherDept: { fontSize: 14, color: '#166534', marginTop: 4 },
+  changeTeacherButton: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#DCFCE7', borderRadius: 20, borderWidth: 1, borderColor: '#BBF7D0' },
+  changeTeacherText: { color: '#166534', fontSize: 12, fontWeight: '600' },
+  selectTeacherButton: { borderRadius: 16, overflow: 'hidden', marginBottom: 20, elevation: 4 },
+  selectTeacherGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: 12 },
+  selectTeacherIcon: { fontSize: 24 },
+  selectTeacherText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  teacherListContainer: { marginTop: 10, marginBottom: 20 },
+  teacherListTitle: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 12 },
+  teacherCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6', elevation: 2 },
+  teacherCardActive: { borderColor: '#667eea', backgroundColor: '#F5F3FF' },
+  teacherAvatar: { marginRight: 16 },
+  teacherAvatarGradient: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
+  teacherAvatarText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  teacherInfo: { flex: 1 },
+  teacherName: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 4 },
+  teacherDetail: { fontSize: 13, color: '#6B7280' },
+  teacherCheck: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#667eea', justifyContent: 'center', alignItems: 'center' },
+  teacherCheckText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  stepButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, gap: 16 },
+  stepButton: { flex: 1, borderRadius: 12, overflow: 'hidden', elevation: 3 },
+  backStepButton: { backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', paddingVertical: 16 },
+  backStepButtonText: { color: '#4B5563', fontSize: 16, fontWeight: 'bold' },
+  submitStepButton: { flex: 2 },
+  submitGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 10 },
+  
+  // Modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  teacherModalContainer: { backgroundColor: '#F9FAFB', borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: height * 0.8 },
+  teacherModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  teacherModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  teacherModalClose: { fontSize: 24, color: '#fff', padding: 5 },
+  teacherModalList: { padding: 20, paddingBottom: 40 },
+  emptyContainer: { padding: 40, alignItems: 'center' },
+  emptyText: { textAlign: 'center', color: '#6B7280', fontSize: 16 },
+  
+  // Success Modal
+  successModal: { backgroundColor: '#fff', margin: 20, borderRadius: 24, padding: 30, alignItems: 'center', elevation: 10 },
+  successIconContainer: { marginBottom: 20 },
+  successIcon: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+  successIconText: { color: '#fff', fontSize: 40, fontWeight: 'bold' },
+  successTitle: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', marginBottom: 12 },
+  successMessage: { fontSize: 16, color: '#4B5563', textAlign: 'center', marginBottom: 20, lineHeight: 24 },
+  requestIdText: { fontSize: 12, color: '#9CA3AF', marginBottom: 30 },
+  modalButton: { width: '100%', borderRadius: 12, overflow: 'hidden' },
+  modalButtonGradient: { paddingVertical: 16, alignItems: 'center' },
+  modalButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
 
 export default ApplyBonafideScreen;

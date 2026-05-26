@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
-import { Worklets } from 'react-native-worklets-core';
+import { Worklets } from 'react-native-worklets';
 import firestore from '@react-native-firebase/firestore';
 
 import { findClosestMatch, StudentFaceData } from '../../services/face/attendanceMatcherService';

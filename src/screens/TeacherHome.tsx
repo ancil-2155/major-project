@@ -33,10 +33,9 @@ const TeacherHome = ({ navigation }: any) => {
         {/* CONTENT */}
         <View style={styles.content}>
 
-          {/* PRIMARY ACTION */}
           <TouchableOpacity
             style={styles.bigCard}
-            onPress={() => navigation.navigate('Attendance')}
+            onPress={() => navigation.navigate('TeacherAttendanceSetup')}
             activeOpacity={0.9}
           >
             <LinearGradient
@@ -58,6 +57,7 @@ const TeacherHome = ({ navigation }: any) => {
               { icon: '📚', label: 'Resources', screen: 'UploadResource' },
               { icon: '📝', label: 'Assignments', screen: 'CreateAssignment' },
               { icon: '🎥', label: 'Meeting', screen: 'CreateMeeting' },
+              { icon: '🖼️', label: 'Gallery', screen: 'EventGallery' },
               { icon: '✍️', label: 'Signature', screen: 'TeacherSignature' },
             ].map((item, index) => (
               <TouchableOpacity

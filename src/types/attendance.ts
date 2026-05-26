@@ -1,0 +1,64 @@
+import { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+export type AttendanceSessionStatus = 'active' | 'submitted' | 'cancelled';
+export type AttendanceRecordStatus = 'present' | 'absent';
+export type AttendanceMethod = 'face_auto' | 'manual_teacher';
+
+export interface AttendanceSession {
+  sessionId: string;
+  teacherId: string;
+  teacherName: string;
+  department: string;
+  year: string;
+  semester: string;
+  subject: string;
+  section?: string;
+  startedAt: FirebaseFirestoreTypes.Timestamp | Date;
+  submittedAt: FirebaseFirestoreTypes.Timestamp | Date | null;
+  status: AttendanceSessionStatus;
+  totalStudents: number;
+  totalPresent: number;
+  totalAbsent: number;
+}
+
+export interface AttendanceRecord {
+  studentId: string;
+  studentName: string;
+  rollNo?: string;
+  department: string;
+  year: string;
+  semester: string;
+  subject: string;
+  status: AttendanceRecordStatus;
+  matchScore?: number;
+  matchedAt?: FirebaseFirestoreTypes.Timestamp | Date;
+  markedBy: string;
+  method: AttendanceMethod;
+  createdAt: FirebaseFirestoreTypes.Timestamp | Date;
+  updatedAt: FirebaseFirestoreTypes.Timestamp | Date;
+}
+
+export interface AttendanceSummary {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  rollNo?: string;
+  teacherId: string;
+  department: string;
+  year: string;
+  semester: string;
+  subject: string;
+  dateKey: string; // "YYYY-MM-DD"
+  status: 'Present' | 'Absent';
+  method: AttendanceMethod;
+  matchScore?: number;
+  createdAt: FirebaseFirestoreTypes.Timestamp | Date;
+}
+
+export interface MatchResult {
+  studentId: string;
+  studentName: string;
+  rollNo?: string;
+  score: number;
+  confidence: 'high' | 'medium' | 'low';
+}

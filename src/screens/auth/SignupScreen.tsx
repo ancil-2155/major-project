@@ -26,17 +26,31 @@ const SignupScreen = ({ navigation }: any) => {
   const [department, setDepartment] = useState('');
   const [rollNo, setRollNo] = useState('');
   const [year, setYear] = useState('');
+  const [semester, setSemester] = useState('');
+  const [section, setSection] = useState('');
 
   const [showDepartmentPicker, setShowDepartmentPicker] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
+  const [showSemesterPicker, setShowSemesterPicker] = useState(false);
+  const [showSectionPicker, setShowSectionPicker] = useState(false);
 
-  const departments = ['CSE', 'ECE', 'ME', 'CIVIL'];
+  const departments = ['CSE', 'ECE', 'ME', 'CE', 'EEE', 'IT', 'AI/DS', 'AIML', 'CIVIL', 'Other'];
   const years = ['1', '2', '3', '4'];
+  const semesters = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const sections = ['A', 'B', 'C', 'D'];
 
   const handleContinue = async () => {
     try {
-      if (!email || !password) {
+      const cleanEmail = email.trim().toLowerCase();
+      
+      if (!cleanEmail || !password) {
         Alert.alert('Error', 'Email & Password required');
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        Alert.alert('Error', 'Please enter a valid email address (e.g., name@example.com)');
         return;
       }
 
@@ -69,12 +83,18 @@ const SignupScreen = ({ navigation }: any) => {
                 navigation.navigate('FaceEnrollment', {
                   userData: {
                     name,
-                    email,
+                    email: cleanEmail,
                     password,
                     role,
                     department,
+                    departmentCode: department,
                     rollNo,
                     year,
+                    yearNumber: parseInt(year, 10),
+                    semester,
+                    semesterNumber: semester ? parseInt(semester, 10) : null,
+                    section,
+                    educationLevel: 'btech',
                   }
                 });
               }
@@ -83,15 +103,17 @@ const SignupScreen = ({ navigation }: any) => {
         );
       } else {
         // Teachers and Parents can register directly
-        const firebaseUser = await signUpStudent(email, password);
+        const firebaseUser = await signUpStudent(cleanEmail, password);
         
         const userDoc: User = {
           uid: firebaseUser.uid,
           name: role !== 'parent' ? name : '',
-          email,
+          email: cleanEmail,
           role,
           department: role !== 'parent' ? department : '',
           year: role === 'teacher' ? year : '',
+          status: role === 'teacher' ? 'pending' : 'active',
+          isApproved: role === 'teacher' ? false : undefined,
         };
 
         await saveUserRecord(userDoc);
@@ -293,6 +315,34 @@ const SignupScreen = ({ navigation }: any) => {
                   <Text style={styles.dropdownIcon}>▼</Text>
                 </TouchableOpacity>
               </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Semester (Optional)</Text>
+                <TouchableOpacity
+                  style={styles.dropdown}
+                  onPress={() => setShowSemesterPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.dropdownText, !semester && styles.placeholderText]}>
+                    {semester ? `Semester ${semester}` : 'Select Semester'}
+                  </Text>
+                  <Text style={styles.dropdownIcon}>▼</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Section (Optional)</Text>
+                <TouchableOpacity
+                  style={styles.dropdown}
+                  onPress={() => setShowSectionPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.dropdownText, !section && styles.placeholderText]}>
+                    {section ? `Section ${section}` : 'Select Section'}
+                  </Text>
+                  <Text style={styles.dropdownIcon}>▼</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -363,6 +413,24 @@ const SignupScreen = ({ navigation }: any) => {
           year,
           setYear,
           'Year'
+        )}
+
+        {renderPickerModal(
+          showSemesterPicker,
+          setShowSemesterPicker,
+          semesters,
+          semester,
+          setSemester,
+          'Semester'
+        )}
+
+        {renderPickerModal(
+          showSectionPicker,
+          setShowSectionPicker,
+          sections,
+          section,
+          setSection,
+          'Section'
         )}
       </ScrollView>
     </>

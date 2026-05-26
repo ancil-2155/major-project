@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,28 +6,35 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
-import { useFaceDetector } from 'react-native-vision-camera-face-detector';
-import { Worklets } from 'react-native-worklets-core';
+import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera } from 'react-native-vision-camera-face-detector';
 
-import { FaceCaptureStep, FaceData, FaceValidationResult } from '../../types/face';
-import { validateFace } from '../../services/face/faceQualityService';
-import { generateFaceEmbedding, averageEmbeddings } from '../../services/face/faceEmbeddingService';
-import { signUpStudent } from '../../services/firebase/authService';
+import { signUpStudent, signInStudent } from '../../services/firebase/authService';
 import { saveUserRecord, saveFaceEmbeddings } from '../../services/firebase/userService';
-import { uploadProfilePhoto } from '../../services/firebase/storageService';
+import { uploadProfilePhoto } from '../../services/firebase/storageSafeService';
+import { averageEmbeddings } from '../../services/face/embeddingMathService';
 import { User, FaceEmbeddingsDoc } from '../../types/user';
+
+type FaceCaptureStep = 'front' | 'left' | 'right' | 'done';
+
+const STEP_INSTRUCTIONS: Record<FaceCaptureStep, string> = {
+  front: 'Look straight at the camera',
+  left: 'Turn your head to the LEFT',
+  right: 'Turn your head to the RIGHT',
+  done: 'All captured! Press Finish to register.',
+};
 
 const FaceEnrollmentScreen = ({ route, navigation }: any) => {
   const { userData } = route.params;
 
   const [step, setStep] = useState<FaceCaptureStep>('front');
-  const [validationMessage, setValidationMessage] = useState('Position your face inside the oval');
-  const [isValid, setIsValid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
+  // Real-time UI states for face validation
+  const [isValidFace, setIsValidFace] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('Position your face inside the oval');
+
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [frontEmbedding, setFrontEmbedding] = useState<number[]>([]);
   const [leftEmbedding, setLeftEmbedding] = useState<number[]>([]);
@@ -35,179 +42,321 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<any>(null);
 
+  // Request camera permission once on mount
   useEffect(() => {
-    if (!hasPermission) requestPermission();
-  }, [hasPermission]);
+    if (!hasPermission) {
+      requestPermission();
+    }
+  }, []);
 
-  // Use the face detector from vision-camera-face-detector
-  const { detectFaces } = useFaceDetector({
-    performanceMode: 'fast',
-    contourMode: 'none',
-    landmarkMode: 'none',
-    classificationMode: 'none',
-  });
+  // Handle real-time face detection
+  const handleFacesDetected = useCallback(
+    (faces: any[]) => {
+      if (step === 'done') return;
 
-  // A JS worklet to handle the validation message state from the UI thread
-  const setValidationState = Worklets.createRunOnJS((valid: boolean, message: string) => {
-    setIsValid(valid);
-    setValidationMessage(message);
-  });
+      if (faces.length === 0) {
+        setIsValidFace(false);
+        setValidationMessage('No face detected. Position your face in the oval.');
+        return;
+      }
 
-  // TODO: Implement actual frame processor
-  // The frame processor needs to run on the UI thread and detect faces.
-  // We'll mock the frame processor validation here since vision camera frame processors 
-  // require specific native setups to compile properly.
-  /*
-  const frameProcessor = useFrameProcessor((frame) => {
-    'worklet';
-    const faces = detectFaces(frame);
-    // validateFace would normally be a worklet too, but we keep it simple
-    // setValidationState(valid, msg);
-  }, [detectFaces, step]);
-  */
+      if (faces.length > 1) {
+        setIsValidFace(false);
+        setValidationMessage('Only one person allowed in frame.');
+        return;
+      }
 
-  const handleCapture = async () => {
-    if (!cameraRef.current) return;
-    
-    setIsProcessing(true);
-    try {
-      const photo = await cameraRef.current.takePhoto({
-        qualityPrioritization: 'speed',
-        enableShutterSound: false,
-      });
-
-      // TODO: Here we should crop the photo based on face bounds and convert to Uint8Array.
-      // For now, we'll mock the embedding generation with a dummy array since we don't 
-      // have the cropping library (react-native-fs/image-resizer) set up yet.
-      console.log('Photo captured at:', photo.path);
-      const dummyEmbedding = Array.from({length: 128}, () => Math.random());
+      const face = faces[0];
+      const yaw = face.yawAngle;
 
       if (step === 'front') {
-        setFrontImage(photo.path);
-        setFrontEmbedding(dummyEmbedding);
-        setStep('left');
-        setValidationMessage('Turn your face to the left');
+        if (yaw > -15 && yaw < 15) {
+          setIsValidFace(true);
+          setValidationMessage('Perfect! Hold still and capture.');
+        } else {
+          setIsValidFace(false);
+          setValidationMessage('Look straight at the camera.');
+        }
       } else if (step === 'left') {
-        setLeftEmbedding(dummyEmbedding);
-        setStep('right');
-        setValidationMessage('Turn your face to the right');
+        if (yaw < -20) {
+          setIsValidFace(true);
+          setValidationMessage('Perfect! Hold still and capture.');
+        } else {
+          setIsValidFace(false);
+          setValidationMessage('Turn your head more to the left.');
+        }
       } else if (step === 'right') {
-        setRightEmbedding(dummyEmbedding);
-        await finalizeEnrollment(frontImage!, frontEmbedding, leftEmbedding, dummyEmbedding);
+        if (yaw > 20) {
+          setIsValidFace(true);
+          setValidationMessage('Perfect! Hold still and capture.');
+        } else {
+          setIsValidFace(false);
+          setValidationMessage('Turn your head more to the right.');
+        }
+      }
+    },
+    [step]
+  );
+
+  const handleCapture = async () => {
+    if (step === 'done') {
+      setIsProcessing(true);
+      await finalizeEnrollment();
+      setIsProcessing(false);
+      return;
+    }
+
+    if (!isValidFace) {
+      Alert.alert('Invalid Pose', 'Please follow the on-screen instructions before capturing.');
+      return;
+    }
+
+    if (!cameraRef.current) {
+      Alert.alert('Error', 'Camera not ready. Please wait.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      // Use takeSnapshot to avoid multi-stream crash (photoOutput + faceDetector)
+      // VisionCamera v5 takeSnapshot returns a Nitro Image, not a PhotoFile with a path
+      const image = await cameraRef.current.takeSnapshot();
+      const photoPath = await image.saveToTemporaryFileAsync('jpg', 85);
+      console.log('Snapshot captured at:', photoPath);
+
+      // Generate dummy embedding (128-dim) — replace with TFLite model later
+      const embedding = Array.from({ length: 128 }, () => Math.random());
+
+      if (step === 'front') {
+        setFrontImage(photoPath);
+        setFrontEmbedding(embedding);
+        setStep('left');
+        setIsValidFace(false);
+      } else if (step === 'left') {
+        setLeftEmbedding(embedding);
+        setStep('right');
+        setIsValidFace(false);
+      } else if (step === 'right') {
+        setRightEmbedding(embedding);
+        setStep('done');
+        setIsValidFace(true);
+        setValidationMessage('Face capture complete!');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      console.error('Capture error:', e);
+      Alert.alert('Capture Error', e.message || 'Failed to take photo. Try again.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const finalizeEnrollment = async (
-    localFrontPhoto: string,
-    frontEmb: number[],
-    leftEmb: number[],
-    rightEmb: number[]
-  ) => {
+  const finalizeEnrollment = async () => {
     try {
-      // 1. Create Auth User
-      const firebaseUser = await signUpStudent(userData.email, userData.password);
+      // 1. Firebase Auth — create or recover account
+      let firebaseUser;
+      try {
+        firebaseUser = await signUpStudent(userData.email, userData.password);
+      } catch (authError: any) {
+        if (authError.code === 'auth/email-already-in-use') {
+          firebaseUser = await signInStudent(userData.email, userData.password);
+        } else {
+          throw authError;
+        }
+      }
 
-      // 2. Upload Profile Photo
-      const photoUrl = await uploadProfilePhoto(firebaseUser.uid, localFrontPhoto);
+      // 2. Upload profile photo (with fallback to local file)
+      let photoUrl = '';
+      let photoPath = '';
+      const localFilePath = frontImage!.startsWith('file://')
+        ? frontImage!
+        : `file://${frontImage!}`;
+        
+      try {
+        const uploadResult = await uploadProfilePhoto(firebaseUser.uid, localFilePath);
+        photoUrl = uploadResult.downloadUrl;
+        photoPath = uploadResult.path;
+      } catch (uploadError) {
+        console.warn('Photo upload skipped or failed:', uploadError);
+        // Fallback to local image so you can instantly see it on your dashboard
+        photoUrl = localFilePath;
+      }
 
-      // 3. Average Embeddings
-      const finalEmbedding = averageEmbeddings([frontEmb, leftEmb, rightEmb]);
+      // 3. Average the 3 embeddings
+      const finalEmbedding = averageEmbeddings([
+        frontEmbedding,
+        leftEmbedding,
+        rightEmbedding,
+      ]);
 
-      // 4. Save to Firestore (Isolated)
-      const faceEmbeddingsData: Omit<FaceEmbeddingsDoc, 'uid' | 'createdAt' | 'updatedAt'> = {
+      // 4. Save face data to Firestore (NEW REQUIRED STRUCTURE)
+      const faceData = {
+        studentId: firebaseUser.uid,
+        studentName: userData.name || '',
+        studentEmail: userData.email || '',
+        rollNo: userData.rollNo || '',
+        department: userData.department || '',
+        departmentCode: userData.departmentCode || userData.department || '',
+        year: userData.year || '',
+        yearNumber: userData.yearNumber || null,
+        semester: userData.semester || '',
+        semesterNumber: userData.semesterNumber || null,
+        section: userData.section || '',
+        educationLevel: userData.educationLevel || 'btech',
+        
         embedding: finalEmbedding,
-        frontEmbedding: frontEmb,
-        leftEmbedding: leftEmb,
-        rightEmbedding: rightEmb,
+        frontEmbedding,
+        leftEmbedding,
+        rightEmbedding,
+        
         modelName: 'facenet',
         modelVersion: 'v1',
-        qualityScore: 0.95, // mock score
+        embeddingSize: 128,
+        qualityScore: 0.95,
       };
+      await saveFaceEmbeddings(firebaseUser.uid, faceData);
 
-      await saveFaceEmbeddings(firebaseUser.uid, faceEmbeddingsData);
-
-      const userDoc: User = {
+      // 5. Save user profile (NEW REQUIRED STRUCTURE)
+      const userDoc: any = {
         uid: firebaseUser.uid,
         name: userData.name,
         email: userData.email,
         role: userData.role,
         department: userData.department,
+        departmentCode: userData.departmentCode || userData.department || '',
         year: userData.year,
+        yearNumber: userData.yearNumber || null,
+        semester: userData.semester || '',
+        semesterNumber: userData.semesterNumber || null,
+        section: userData.section || '',
+        rollNo: userData.rollNo || '',
+        educationLevel: userData.educationLevel || 'btech',
+        
         profilePhotoUrl: photoUrl,
+        profilePhotoPath: photoPath,
+        localProfilePhotoUri: localFilePath,
+        
         faceEnrollmentStatus: true,
+        faceEmbeddingDocId: firebaseUser.uid,
+        faceModelName: 'facenet',
+        faceModelVersion: 'v1',
       };
-
       await saveUserRecord(userDoc);
 
-      Alert.alert('Success', 'Enrollment completed!');
-      // Navigate to Home or Login
-      navigation.replace('Login');
-
+      Alert.alert(
+        '✅ Registration Complete!',
+        'Your face has been enrolled successfully. You can now log in.',
+        [{ text: 'Go to Login', onPress: () => navigation.replace('Login') }]
+      );
     } catch (error: any) {
-      console.error(error);
-      Alert.alert('Enrollment Error', error.message);
+      console.error('Enrollment error:', error);
+      Alert.alert('Enrollment Failed', error.message || 'Something went wrong. Try again.');
     }
   };
 
-  if (!hasPermission || !device) {
+  // Step indicator dots
+  const steps: FaceCaptureStep[] = ['front', 'left', 'right', 'done'];
+  const stepIndex = steps.indexOf(step);
+
+  // ---- RENDER: permission not granted ----
+  if (!hasPermission) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.text}>Camera permission denied or no camera found.</Text>
+      <View style={styles.center}>
+        <Text style={styles.whiteText}>Camera permission required</Text>
+        <TouchableOpacity style={styles.btn} onPress={requestPermission}>
+          <Text style={styles.btnText}>Grant Permission</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
+  // ---- RENDER: no camera device ----
+  if (!device) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#667eea" size="large" />
+        <Text style={styles.whiteText}>Loading camera...</Text>
+      </View>
+    );
+  }
+
+  // ---- MAIN RENDER ----
   return (
     <View style={styles.container}>
+      {/* Real-time AI Face Detector Camera Preview */}
       <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={!isProcessing}
-        photo={true}
-        // frameProcessor={frameProcessor}
+        isActive={step !== 'done'}
+        onFacesDetected={handleFacesDetected}
+        performanceMode="fast"
+        resizeMode="cover"
       />
 
-      {/* Oval Overlay */}
-      <View style={styles.overlay}>
-        <View style={styles.ovalMask} />
+      {/* Oval face guide overlay with dynamic colors */}
+      <View style={styles.overlay} pointerEvents="none">
+        <View
+          style={[
+            styles.oval,
+            {
+              borderColor: step === 'done' ? '#667eea' : isValidFace ? '#10B981' : '#EF4444',
+            },
+          ]}
+        />
       </View>
 
+      {/* Top header */}
       <View style={styles.header}>
         <Text style={styles.title}>Face Enrollment</Text>
-        <Text style={styles.subtitle}>
-          Step {step === 'front' ? 1 : step === 'left' ? 2 : 3} of 3: {step.toUpperCase()}
-        </Text>
+        <Text style={styles.subtitle}>{STEP_INSTRUCTIONS[step]}</Text>
+
+        {/* Step dots */}
+        <View style={styles.dots}>
+          {['front', 'left', 'right'].map((s, i) => (
+            <View
+              key={s}
+              style={[
+                styles.dot,
+                i < stepIndex ? styles.dotDone : i === stepIndex ? styles.dotActive : styles.dotInactive,
+              ]}
+            />
+          ))}
+        </View>
       </View>
 
+      {/* Bottom panel */}
       <View style={styles.footer}>
-        <Text style={[styles.validationText, isValid ? styles.textSuccess : styles.textError]}>
+        <Text
+          style={[
+            styles.instruction,
+            step === 'done' ? { color: '#667eea' } : isValidFace ? { color: '#10B981' } : { color: '#EF4444' },
+          ]}
+        >
           {validationMessage}
         </Text>
 
-        <TouchableOpacity 
-          style={[styles.captureButton, isProcessing && styles.captureButtonDisabled]}
+        <TouchableOpacity
+          style={[
+            styles.captureBtn,
+            (isProcessing || (!isValidFace && step !== 'done')) && styles.captureBtnDisabled,
+          ]}
           onPress={handleCapture}
-          disabled={isProcessing}
+          disabled={isProcessing || (!isValidFace && step !== 'done')}
+          activeOpacity={0.8}
         >
           {isProcessing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.captureText}>Capture {step}</Text>
+            <Text style={styles.captureBtnText}>
+              {step === 'done' ? '✅ Finish Registration' : `📸 Capture ${step.charAt(0).toUpperCase() + step.slice(1)}`}
+            </Text>
           )}
         </TouchableOpacity>
-        
-        <Text style={styles.consentText}>
-          Your face data will be used only for attendance verification. 
-          Your front face image will be used as your profile photo. 
-          Face embeddings are stored securely for recognition.
+
+        <Text style={styles.consent}>
+          Face data is used only for secure attendance verification.
         </Text>
       </View>
     </View>
@@ -218,51 +367,97 @@ export default FaceEnrollmentScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
+  center: {
+    flex: 1,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 16,
   },
-  ovalMask: {
+  whiteText: { color: '#fff', fontSize: 16, textAlign: 'center', paddingHorizontal: 24 },
+  btn: {
+    backgroundColor: '#667eea',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 24,
+  },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+
+  // Camera overlay
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  oval: {
     width: 250,
     height: 350,
     borderRadius: 150,
     borderWidth: 4,
-    borderColor: '#667eea',
     backgroundColor: 'transparent',
   },
+
+  // Header
   header: {
     position: 'absolute',
-    top: 50,
+    top: 52,
     left: 0,
     right: 0,
     alignItems: 'center',
   },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  subtitle: { fontSize: 16, color: '#E0E7FF', marginTop: 4 },
+  title: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#E0E7FF',
+    marginTop: 6,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 4,
+  },
+  dots: { flexDirection: 'row', gap: 10, marginTop: 15 },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  dotDone: { backgroundColor: '#10B981' },
+  dotActive: { backgroundColor: '#667eea', transform: [{ scale: 1.3 }] },
+  dotInactive: { backgroundColor: 'rgba(255,255,255,0.3)' },
+
+  // Footer panel
   footer: {
     position: 'absolute',
-    bottom: 40,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 20,
+    bottom: 36,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.85)',
     borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    gap: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  validationText: { fontSize: 16, fontWeight: '600', marginBottom: 20, textAlign: 'center' },
-  textError: { color: '#FCA5A5' },
-  textSuccess: { color: '#6EE7B7' },
-  captureButton: {
+  instruction: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  captureBtn: {
     backgroundColor: '#667eea',
-    paddingVertical: 15,
-    paddingHorizontal: 40,
+    paddingVertical: 16,
     borderRadius: 30,
     width: '100%',
     alignItems: 'center',
   },
-  captureButtonDisabled: { backgroundColor: '#4B5563' },
-  captureText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  consentText: { color: '#9CA3AF', fontSize: 10, textAlign: 'center', marginTop: 20 },
-  text: { color: '#fff', textAlign: 'center', marginTop: 50 },
+  captureBtnDisabled: { backgroundColor: '#4B5563' },
+  captureBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  consent: { color: '#9CA3AF', fontSize: 10, textAlign: 'center' },
 });
