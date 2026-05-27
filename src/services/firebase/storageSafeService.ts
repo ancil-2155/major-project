@@ -10,19 +10,20 @@ export interface StorageUploadResult {
  * Safely fetches a download URL for a given path.
  * If the object does not exist, it silently returns null instead of throwing an error.
  */
-export const safeGetDownloadUrl = async (path: string): Promise<string | null> => {
-  if (!path) return null;
+export const safeGetDownloadUrl = async (path?: string | null): Promise<string | null> => {
+  if (!path || typeof path !== 'string' || path.trim() === '') {
+    return null;
+  }
   
   try {
-    const url = await storage().ref(path).getDownloadURL();
-    return url;
+    return await storage().ref(path).getDownloadURL();
   } catch (error: any) {
-    if (error.code === 'storage/object-not-found') {
-      // Expected case for missing photos, do not throw.
+    if (error?.code === 'storage/object-not-found' || String(error?.message || '').includes('object-not-found')) {
+      console.warn('[Storage] Missing optional object:', path);
       return null;
     }
     console.warn(`Error getting download URL for ${path}:`, error);
-    return null;
+    return null; // Don't throw for other errors either to prevent UI crashes, just return null
   }
 };
 

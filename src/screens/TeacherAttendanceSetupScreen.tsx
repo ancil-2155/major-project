@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
@@ -42,6 +43,7 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
   const [availableSubjects, setAvailableSubjects] = useState<SubjectOption[]>([]);
   const [subject, setSubject] = useState('');
   const [isLoadingSubjects, setIsLoadingSubjects] = useState(false);
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadResult, setLoadResult] = useState<ClassLoadResult | null>(null);
@@ -296,14 +298,19 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
                 <Text style={styles.loadingText}>Loading subjects catalog...</Text>
               </View>
             ) : availableSubjects.length > 0 ? (
-              <ChipSelector
-                label="Select Subject"
-                options={availableSubjects}
-                selectedValue={subject}
-                onSelect={(item: SubjectOption) => { setSubject(item.name); setLoadResult(null); }}
-                keyExtractor={(item) => item.id}
-                labelExtractor={(item) => item.name}
-              />
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Select Subject</Text>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => setShowSubjectModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dropdownButtonText, !subject && styles.placeholderText]}>
+                    {subject || 'Tap to select a subject...'}
+                  </Text>
+                  <Text style={styles.dropdownIcon}>▼</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>No subjects configured for this selection.</Text>
@@ -384,6 +391,46 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
           </View>
         )}
       </ScrollView>
+
+      {/* ── Subject Modal ── */}
+      <Modal
+        visible={showSubjectModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowSubjectModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Subject</Text>
+              <TouchableOpacity onPress={() => setShowSubjectModal(false)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalList}>
+              {availableSubjects.map((item) => {
+                const isSelected = subject === item.name;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.modalItem, isSelected && styles.modalItemActive]}
+                    onPress={() => {
+                      setSubject(item.name);
+                      setLoadResult(null);
+                      setShowSubjectModal(false);
+                    }}
+                  >
+                    <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
+                      {item.name}
+                    </Text>
+                    {isSelected && <Text style={styles.checkIcon}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -489,4 +536,36 @@ const styles = StyleSheet.create({
   },
   debugTitle: { fontSize: 12, fontWeight: 'bold', color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase' },
   debugText: { fontSize: 11, color: '#cbd5e1', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginBottom: 4 },
+
+  // Dropdown Styles
+  dropdownButton: {
+    backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155',
+    padding: 16, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'
+  },
+  dropdownButtonText: { color: '#f8fafc', fontSize: 15, fontWeight: '500', flex: 1 },
+  placeholderText: { color: '#64748b' },
+  dropdownIcon: { color: '#94a3b8', fontSize: 14 },
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: {
+    backgroundColor: '#1e293b', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    maxHeight: '70%', paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: '#334155'
+  },
+  modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: 'bold' },
+  closeBtn: { padding: 4 },
+  closeBtnText: { color: '#94a3b8', fontSize: 20, fontWeight: 'bold' },
+  modalList: { padding: 10 },
+  modalItem: {
+    padding: 16, borderRadius: 12, marginBottom: 8,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'
+  },
+  modalItemActive: { backgroundColor: '#0c4a6e' },
+  modalItemText: { color: '#cbd5e1', fontSize: 15, fontWeight: '500' },
+  modalItemTextActive: { color: '#38bdf8', fontWeight: 'bold' },
+  checkIcon: { color: '#38bdf8', fontSize: 16, fontWeight: 'bold' },
 });

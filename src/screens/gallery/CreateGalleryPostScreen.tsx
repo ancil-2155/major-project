@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,19 +11,24 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
+import Video from 'react-native-video';
 import { launchImageLibrary } from 'react-native-image-picker';
-import LinearGradient from 'react-native-linear-gradient';
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 import { uploadMediaToCloudinary } from '../../services/cloudinary/cloudinaryUploadService';
 import { createGalleryPost } from '../../services/gallery/galleryService';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { useAppTheme } from '../../theme/appTheme';
 
-const MAX_VIDEO_DURATION = 60; // seconds
-const MAX_IMAGE_SIZE = 15 * 1024 * 1024; // 15MB
-const MAX_VIDEO_SIZE = 150 * 1024 * 1024; // 150MB
+const MAX_VIDEO_DURATION = 60;
+const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 150 * 1024 * 1024;
 
 const CreateGalleryPostScreen = ({ navigation }: any) => {
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
   const [media, setMedia] = useState<any>(null);
   const [heading, setHeading] = useState('');
   const [caption, setCaption] = useState('');
@@ -37,17 +42,20 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
         videoQuality: 'high',
         quality: 0.8,
       },
-      (response) => {
-        if (response.didCancel) return;
+      response => {
+        if (response.didCancel) {
+          return;
+        }
         if (response.errorMessage) {
           Alert.alert('Error', response.errorMessage);
           return;
         }
 
         const asset = response.assets?.[0];
-        if (!asset) return;
+        if (!asset) {
+          return;
+        }
 
-        // Validation
         if (asset.type?.includes('video')) {
           if (asset.duration && asset.duration > MAX_VIDEO_DURATION) {
             Alert.alert('Error', 'Video must be 60 seconds or less.');
@@ -57,40 +65,39 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
             Alert.alert('Error', 'Video must be less than 150MB.');
             return;
           }
-        } else {
-          if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
-            Alert.alert('Error', 'Image must be less than 15MB.');
-            return;
-          }
+        } else if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
+          Alert.alert('Error', 'Image must be less than 15MB.');
+          return;
         }
 
         setMedia(asset);
-      }
+      },
     );
   };
 
   const handleUpload = async () => {
     if (!media || !heading.trim()) {
-      Alert.alert('Error', 'Please add a heading and select a valid media file.');
+      Alert.alert('Error', 'Please add a heading and select a media file.');
       return;
     }
 
     setLoading(true);
     try {
       const user = auth().currentUser;
-      if (!user) throw new Error('User not authenticated');
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
       const userDoc = await firestore().collection('users').doc(user.uid).get();
       const userData = userDoc.data();
       const role = userData?.role || 'student';
       const isTeacherOrAdmin = role === 'teacher' || role === 'admin';
-
       const mediaType = media.type?.includes('video') ? 'video' : 'image';
-      
+
       const response = await uploadMediaToCloudinary(
         media.uri,
         mediaType,
-        setProgress
+        setProgress,
       );
 
       const cloudinaryData = {
@@ -105,7 +112,7 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
       };
 
       if (!cloudinaryData.secureUrl || !cloudinaryData.publicId) {
-        throw new Error('Cloudinary upload completed but required media data is missing.');
+        throw new Error('Cloudinary upload completed but media data is missing.');
       }
 
       await createGalleryPost({
@@ -113,8 +120,8 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
         uploaderName: userData?.name || 'Unknown',
         uploaderRole: role,
         uploaderPhotoUrl: userData?.profilePhoto || null,
-        heading: heading.trim() || 'Untitled Event',
-        caption: caption.trim() || '',
+        heading: heading.trim(),
+        caption: caption.trim(),
         mediaType,
         mediaUrl: cloudinaryData.secureUrl,
         thumbnailUrl: cloudinaryData.secureUrl,
@@ -123,9 +130,12 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
         format: cloudinaryData.format,
         width: cloudinaryData.width,
         height: cloudinaryData.height,
-        duration: mediaType === 'video' ? cloudinaryData.duration ?? (media.duration ?? null) : null,
+        duration:
+          mediaType === 'video'
+            ? cloudinaryData.duration ?? media.duration ?? null
+            : null,
         bytes: cloudinaryData.bytes,
-        status: isTeacherOrAdmin ? 'approved' : 'pending',
+        status: 'approved',
         visibility: 'school',
         department: userData?.department || null,
         year: userData?.year || null,
@@ -134,7 +144,7 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
         section: userData?.section || null,
       });
 
-      Alert.alert('Success', 'Post uploaded successfully!' + (!isTeacherOrAdmin ? ' It is pending approval.' : ''));
+      Alert.alert('Post Uploaded', 'Your post is now live in the gallery.');
       navigation.goBack();
     } catch (error: any) {
       console.error('[Gallery Error]', error);
@@ -145,66 +155,110 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
     }
   };
 
+  const isVideo = media?.type?.includes('video');
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.surface}
+      />
+
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.72}>
+          <Icon name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Post</Text>
-        <View style={{ width: 60 }} />
-      </LinearGradient>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity style={styles.mediaPicker} onPress={selectMedia}>
-          {media ? (
-            <Image source={{ uri: media.uri }} style={styles.preview} />
-          ) : (
-            <View style={styles.placeholder}>
-              <Text style={styles.placeholderIcon}>📸</Text>
-              <Text style={styles.placeholderText}>Tap to select Image / Video</Text>
-              <Text style={styles.hintText}>(Max: 60s video, 15MB image)</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Heading (e.g. Annual Sports Day)"
-          placeholderTextColor="#9CA3AF"
-          value={heading}
-          onChangeText={setHeading}
-          maxLength={60}
-        />
-
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          placeholder="Write a caption..."
-          placeholderTextColor="#9CA3AF"
-          value={caption}
-          onChangeText={setCaption}
-          multiline
-          numberOfLines={4}
-          maxLength={500}
-        />
-
-        <TouchableOpacity 
-          style={[styles.submitBtn, loading && styles.disabledBtn]} 
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Create Post</Text>
+          <Text style={styles.headerSubtitle}>Share a campus moment</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.postButton, loading && styles.disabledButton]}
           onPress={handleUpload}
           disabled={loading}
-        >
+          activeOpacity={0.72}>
           {loading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color="#fff" style={{ marginRight: 10 }} />
-              <Text style={styles.submitText}>Uploading... {progress}%</Text>
-            </View>
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
-            <Text style={styles.submitText}>Share Post</Text>
+            <Text style={styles.postButtonText}>Post</Text>
           )}
         </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled">
+        <TouchableOpacity
+          style={styles.mediaPicker}
+          onPress={selectMedia}
+          activeOpacity={0.82}>
+          {media ? (
+            isVideo ? (
+              <View style={styles.previewWrap}>
+                <Video
+                  source={{ uri: media.uri }}
+                  style={styles.preview}
+                  resizeMode="cover"
+                  muted
+                  paused
+                />
+                <View style={styles.previewBadge}>
+                  <Icon name="play" size={14} color="#FFFFFF" />
+                  <Text style={styles.previewBadgeText}>Video</Text>
+                </View>
+              </View>
+            ) : (
+              <Image source={{ uri: media.uri }} style={styles.preview} />
+            )
+          ) : (
+            <View style={styles.placeholder}>
+              <View style={styles.placeholderIcon}>
+                <Icon name="images-outline" size={34} color={colors.primary} />
+              </View>
+              <Text style={styles.placeholderText}>Select image or video</Text>
+              <Text style={styles.hintText}>60s video max, 15MB image max</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {loading ? (
+          <View style={styles.progressWrap}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress}%` }]} />
+            </View>
+            <Text style={styles.progressText}>Uploading {progress}%</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.formCard}>
+          <Text style={styles.inputLabel}>Heading</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Annual Sports Day"
+            placeholderTextColor={colors.muted}
+            value={heading}
+            onChangeText={setHeading}
+            maxLength={60}
+          />
+
+          <Text style={styles.inputLabel}>Caption</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Write a short caption..."
+            placeholderTextColor={colors.muted}
+            value={caption}
+            onChangeText={setCaption}
+            multiline
+            numberOfLines={4}
+            maxLength={500}
+          />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -212,58 +266,180 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
 
 export default CreateGalleryPostScreen;
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  backBtn: { padding: 10, paddingLeft: 0, width: 60 },
-  backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  content: { padding: 20 },
-  mediaPicker: {
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    overflow: 'hidden',
-    height: 250,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  preview: { width: '100%', height: '100%', resizeMode: 'cover' },
-  placeholder: { alignItems: 'center' },
-  placeholderIcon: { fontSize: 40, marginBottom: 10 },
-  placeholderText: { color: '#4B5563', fontWeight: '600' },
-  hintText: { color: '#9CA3AF', fontSize: 12, marginTop: 5 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    fontSize: 16,
-    color: '#1F2937',
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  textArea: { height: 100, textAlignVertical: 'top' },
-  submitBtn: {
-    backgroundColor: '#4F46E5',
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  disabledBtn: { backgroundColor: '#818CF8' },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  loadingRow: { flexDirection: 'row', alignItems: 'center' },
-});
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      paddingTop: Platform.OS === 'ios' ? 52 : 20,
+      paddingBottom: 12,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    headerButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.chip,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    headerCenter: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '900',
+    },
+    headerSubtitle: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: '700',
+      marginTop: 1,
+    },
+    postButton: {
+      minWidth: 58,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+    },
+    disabledButton: {
+      opacity: 0.72,
+    },
+    postButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '900',
+    },
+    content: {
+      padding: 14,
+      paddingBottom: 36,
+    },
+    mediaPicker: {
+      height: 330,
+      borderRadius: 22,
+      overflow: 'hidden',
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 16,
+      shadowColor: colors.shadow,
+      shadowOpacity: isDark ? 0.22 : 0.08,
+      shadowOffset: { width: 0, height: 12 },
+      shadowRadius: 22,
+      elevation: 2,
+    },
+    previewWrap: {
+      flex: 1,
+    },
+    preview: {
+      width: '100%',
+      height: '100%',
+      resizeMode: 'cover',
+    },
+    previewBadge: {
+      position: 'absolute',
+      left: 14,
+      bottom: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 999,
+      backgroundColor: 'rgba(0,0,0,0.58)',
+    },
+    previewBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    placeholder: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    placeholderIcon: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: colors.primarySoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+    placeholderText: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '900',
+    },
+    hintText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      marginTop: 6,
+      fontWeight: '600',
+    },
+    progressWrap: {
+      marginBottom: 16,
+    },
+    progressTrack: {
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.chip,
+      overflow: 'hidden',
+    },
+    progressFill: {
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    progressText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '700',
+      marginTop: 6,
+      textAlign: 'right',
+    },
+    formCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 14,
+    },
+    inputLabel: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '900',
+      marginBottom: 8,
+    },
+    input: {
+      backgroundColor: colors.input,
+      borderRadius: 15,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
+      fontSize: 15,
+      color: colors.text,
+      marginBottom: 15,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+    },
+    textArea: {
+      minHeight: 116,
+      textAlignVertical: 'top',
+      marginBottom: 0,
+    },
+  });

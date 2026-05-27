@@ -7,41 +7,12 @@ export interface ClassStudent {
   embedding: number[];
 }
 
+import { l2Distance } from '../face/embeddingMathService';
+
 // Configurable threshold for Euclidean distance matching
 // NOTE: This must be tested with real student data to find the optimal balance 
 // between false positives and false negatives. 0.9 is a standard starting point for L2-normalized FaceNet.
 export const MATCH_THRESHOLD = 0.9;
-
-export const normalizeEmbedding = (embedding: number[]): number[] => {
-  const sum = embedding.reduce((acc, val) => acc + val * val, 0);
-  const norm = Math.sqrt(sum);
-  if (norm === 0) return embedding;
-  return embedding.map(val => val / norm);
-};
-
-export const l2Distance = (emb1: number[], emb2: number[]): number => {
-  if (emb1.length !== emb2.length) return 999;
-  let sum = 0;
-  for (let i = 0; i < emb1.length; i++) {
-    const diff = emb1[i] - emb2[i];
-    sum += diff * diff;
-  }
-  return Math.sqrt(sum);
-};
-
-export const cosineSimilarity = (emb1: number[], emb2: number[]): number => {
-  if (emb1.length !== emb2.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < emb1.length; i++) {
-    dotProduct += emb1[i] * emb2[i];
-    normA += emb1[i] * emb1[i];
-    normB += emb2[i] * emb2[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-};
 
 export const isMatch = (score: number, threshold: number = MATCH_THRESHOLD): boolean => {
   return score < threshold;

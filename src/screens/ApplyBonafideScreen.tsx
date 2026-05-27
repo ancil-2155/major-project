@@ -20,6 +20,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { getApprovedTeachersForStudent, TeacherOption } from '../services/student/teacherSelectionService';
+import AppBackButton from '../components/common/AppBackButton';
 
 const { width, height } = Dimensions.get('window');
 
@@ -222,13 +223,14 @@ const ApplyBonafideScreen = ({ navigation }: any) => {
             end={{ x: 1, y: 1 }}
             style={styles.header}
           >
-            <TouchableOpacity
+            <AppBackButton
+              navigation={navigation}
               style={styles.backButton}
-              onPress={() => step === 2 ? setStep(1) : navigation.goBack()}
-              activeOpacity={0.7}
+              fallbackRoute="StudentHome"
+              onPress={() => (step === 2 ? setStep(1) : navigation.goBack())}
             >
               <Text style={styles.backIcon}>←</Text>
-            </TouchableOpacity>
+            </AppBackButton>
             <Animated.View style={{ opacity: fadeAnim }}>
               <Text style={styles.headerTitle}>Bonafide Certificate</Text>
               <Text style={styles.headerSubtitle}>

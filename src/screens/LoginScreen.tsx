@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,18 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import ACAMSLogo from '../components/common/ACAMSLogo';
+import { useAppTheme } from '../theme/appTheme';
 
 const LoginScreen = ({ navigation }: any) => {
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,7 +98,15 @@ const LoginScreen = ({ navigation }: any) => {
 
   return (
     <View style={styles.container}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
+      />
       <View style={styles.card}>
+        <View style={styles.logoWrap}>
+          <ACAMSLogo size={92} />
+        </View>
+        <Text style={styles.appName}>ACAMS</Text>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
@@ -130,6 +143,14 @@ const LoginScreen = ({ navigation }: any) => {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.forgotButton}
+          onPress={() => navigation.navigate('ForgotPassword')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.forgotText}>Forgot Password?</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.linkButton}
           onPress={() => navigation.navigate('Signup')}
         >
@@ -144,49 +165,63 @@ const LoginScreen = ({ navigation }: any) => {
 
 export default LoginScreen;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 20,
     padding: 24,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: isDark ? 0.28 : 0.1,
     shadowRadius: 8,
     elevation: 5,
   },
-  title: {
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  appName: {
     fontSize: 28,
+    fontWeight: '900',
+    color: colors.text,
+    textAlign: 'center',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.inputBorder,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
+    color: colors.text,
+    backgroundColor: colors.input,
     marginBottom: 16,
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -197,16 +232,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  forgotButton: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  forgotText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '500',
+  },
   linkButton: {
-    marginTop: 20,
+    marginTop: 12,
     alignItems: 'center',
   },
   linkText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   linkHighlight: {
-    color: '#2563EB',
+    color: colors.primary,
     fontWeight: '600',
   },
 });

@@ -9,6 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import AppBackButton from '../components/common/AppBackButton';
 
 const AttendanceScreen = ({ navigation }: any) => {
   const [department, setDepartment] = useState('CSE');
@@ -80,6 +81,10 @@ const AttendanceScreen = ({ navigation }: any) => {
       <StatusBar barStyle="light-content" backgroundColor="#4F46E5" />
       <ScrollView style={styles.container}>
         <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.header}>
+          <View style={styles.headerTop}>
+            <AppBackButton navigation={navigation} fallbackRoute="StudentHome" />
+            <View style={{ width: 44 }} />
+          </View>
           <Text style={styles.headerTitle}>Live Attendance</Text>
           <Text style={styles.headerSubtitle}>Set up the class before starting the scanner</Text>
         </LinearGradient>
@@ -137,6 +142,7 @@ export default AttendanceScreen;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
   header: { padding: 30, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, paddingTop: 60 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   headerTitle: { fontSize: 26, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
   headerSubtitle: { color: '#E0E7FF', textAlign: 'center', marginTop: 8 },
   content: { padding: 20, marginTop: 10 },

@@ -24,3 +24,7 @@ export const removeUndefinedFields = <T extends Record<string, any>>(obj: T): Pa
 export const nullIfUndefined = <T>(value: T | undefined | null): T | null => {
   return value === undefined ? null : value;
 };
+
+export const sanitizeFirestoreData = <T extends Record<string, any>>(data: T): Partial<T> => {
+  return removeUndefinedFields(data);
+};

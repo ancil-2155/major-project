@@ -170,7 +170,8 @@ const GroupChatScreen = ({ route, navigation }: any) => {
     if (!currentUser) return;
     setUploading(true);
     try {
-      const reference = storage().ref(`group_chats/${groupId}/${Date.now()}_${fileName}`);
+      const path = `group_chats/${groupId}/${Date.now()}_${fileName}`;
+      const reference = storage().ref(path);
       
       if (Platform.OS === 'android' && uri.startsWith('content://')) {
         const base64Data = await ReactNativeBlobUtil.fs.readFile(uri, 'base64');
@@ -179,6 +180,7 @@ const GroupChatScreen = ({ route, navigation }: any) => {
         await reference.putFile(uri);
       }
       
+      // Only runs if upload succeeds
       const url = await reference.getDownloadURL();
 
       await firestore().collection('groupMessages').add({
@@ -193,8 +195,8 @@ const GroupChatScreen = ({ route, navigation }: any) => {
         createdAt: firestore.FieldValue.serverTimestamp(),
       });
     } catch (e: any) {
-      console.log('Upload error:', e);
-      Alert.alert('Upload Error', `Details: ${e?.message || e}`);
+      console.warn('Upload error:', e);
+      Alert.alert('Upload Failed', `Could not upload file: ${e?.message || e}`);
     } finally {
       setUploading(false);
     }

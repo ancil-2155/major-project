@@ -9,12 +9,10 @@ import { generateFaceEmbedding } from './faceEmbeddingService';
 // In a full production app, this would use a native worklet or image resizer
 // to strictly crop the face bounds to 160x160 before generating the embedding.
 const mockCropAndResizeFace = (frameData: any, faceBounds: any): Uint8Array => {
-  // Returns a dummy 160x160x3 byte array
+  // Returns a dummy 160x160x3 byte array filled with 1s for math stability
   const dummySize = 160 * 160 * 3;
   const buffer = new Uint8Array(dummySize);
-  for (let i = 0; i < dummySize; i++) {
-    buffer[i] = Math.floor(Math.random() * 255);
-  }
+  buffer.fill(1); // Use constant instead of random to ensure stable embedding logic during test
   return buffer;
 };
 

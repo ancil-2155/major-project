@@ -9,8 +9,9 @@ import {
 import auth from '@react-native-firebase/auth';
 import { getStudentPublishedResults } from '../services/results/resultService';
 import LinearGradient from 'react-native-linear-gradient';
+import AppBackButton from '../components/common/AppBackButton';
 
-const ViewResultsScreen = () => {
+const ViewResultsScreen = ({ navigation }: any) => {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +46,16 @@ const ViewResultsScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>My Results</Text>
+      <View style={styles.header}>
+        <AppBackButton
+          navigation={navigation}
+          fallbackRoute="StudentHome"
+          iconColor="#1F2937"
+          backgroundColor="#E5E7EB"
+        />
+        <Text style={styles.title}>My Results</Text>
+        <View style={{ width: 44 }} />
+      </View>
 
       <FlatList
         data={results}
@@ -106,8 +116,9 @@ export default ViewResultsScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: '#F3F4F6' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#1F2937' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#1F2937' },
   
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

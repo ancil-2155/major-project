@@ -1,338 +1,200 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Dimensions,
-  StatusBar,
-  Image,
-  Modal,
-  Animated,
   ActivityIndicator,
-  RefreshControl,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import { getProfilePhotoUrl } from '../services/firebase/storageSafeService';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-
-const { width } = Dimensions.get('window');
+import { getProfilePhotoUrl } from '../services/firebase/storageSafeService';
+import { subscribeActiveNoticesForUser } from '../services/notice/noticeService';
+import { useAppTheme } from '../theme/appTheme';
+import { useTranslation } from '../hooks/useTranslation';
+import DashboardHeader from '../components/dashboard/DashboardHeader';
+import FeatureGrid from '../components/dashboard/FeatureGrid';
+import { studentFeatures } from '../config/dashboardFeatures';
+import { dashboardTheme } from '../theme/dashboardTheme';
 
 type StudentHomeProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'StudentHome'>;
 };
 
-type FeatureScreen =
-  | 'MeetingViewer'
-  | 'Library'
-  | 'Gallery'
-  | 'TimetableMenu'
-  | 'ViewResults'
-  | 'TeacherGroups'
-  | 'Resources'
-  | 'ApplyBonafide'
-  | 'StudentBonafideList'
-  | 'ApplyLeave'
-  | 'StudentLeaveList'
-  | 'StudentLeaveList'
-  | 'StudentAssignments'
-  | 'EventGallery'
-  | 'MyGalleryPosts';
-
-type FeatureItem = {
-  id: number;
-  title: string;
-  icon: string;
-  gradient: [string, string];
-  screen: FeatureScreen;
-  badge?: number;
-};
-
 const StudentHome: React.FC<StudentHomeProps> = ({ navigation }) => {
-  const [userData, setUserData] = useState<any>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const { colors, isDark } = useAppTheme();
+  const { t } = useTranslation();
+  const { width } = useWindowDimensions();
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const [unreadNotices, setUnreadNotices] = useState(0);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const numColumns = width < 360 ? 1 : 2;
+  const cardWidth =
+    (width -
+      dashboardTheme.spacing.screenPadding * 2 -
+      dashboardTheme.spacing.cardGap * (numColumns - 1)) /
+    numColumns;
 
-  useEffect(() => {
-    fetchUserData();
-  }, []);
-
-  const fetchUserData = async () => {
-    try {
-      const user = auth().currentUser;
-      if (user) {
-        const doc = await firestore().collection('users').doc(user.uid).get();
-        if (doc.exists) {
-          const data = doc.data();
-          setUserData(data);
-          
-          // Safely load profile photo URL
-          const safeUrl = await getProfilePhotoUrl(data);
-          setProfilePhotoUrl(safeUrl);
-        }
+  const safeTranslate = useCallback(
+    (key: string, fallback: string) => {
+      const value = t(key);
+      if (!value || value === key) {
+        return fallback;
       }
-    } catch (e) {
-      console.log('Error fetching user:', e);
+      return value;
+    },
+    [t],
+  );
+
+  const loadDashboard = useCallback(async () => {
+    const currentUser = auth().currentUser;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const userDoc = await firestore().collection('users').doc(currentUser.uid).get();
+      const data = userDoc.data();
+      setUserData(data);
+      const safePhoto = await getProfilePhotoUrl(data);
+      setProfilePhotoUrl(safePhoto);
+    } catch (error) {
+      console.log('Student dashboard load error:', error);
     } finally {
       setLoading(false);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }).start();
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    if (!userData) {
+      return;
+    }
+    const unsubscribe = subscribeActiveNoticesForUser(
+      userData,
+      'student',
+      (_notices, count) => setUnreadNotices(count),
+    );
+    return () => unsubscribe();
+  }, [userData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchUserData();
+    await loadDashboard();
     setRefreshing(false);
   };
 
-  const features: FeatureItem[] = [
-    { id: 1, title: 'Join Meeting', icon: '🎥', gradient: ['#4ECDC4', '#44A08D'], screen: 'MeetingViewer' },
-    { id: 2, title: 'Library', icon: '📚', gradient: ['#667eea', '#764ba2'], screen: 'Library' },
-    { id: 3, title: 'Event Gallery', icon: '🖼️', gradient: ['#f093fb', '#f5576c'], screen: 'EventGallery' as FeatureScreen },
-    { id: 31, title: 'My Posts', icon: '📝', gradient: ['#FCA5A5', '#EF4444'], screen: 'MyGalleryPosts' as FeatureScreen },
-    { id: 4, title: 'Academic', icon: '📅', gradient: ['#4facfe', '#00f2fe'], screen: 'TimetableMenu' },
-    { id: 5, title: 'Results', icon: '📊', gradient: ['#fa709a', '#fee140'], screen: 'ViewResults' },
-    { id: 6, title: 'Teachers', icon: '👨‍🏫', gradient: ['#a18cd1', '#fbc2eb'], screen: 'TeacherGroups' },
-    { id: 7, title: 'Resources', icon: '📎', gradient: ['#ffecd2', '#fcb69f'], screen: 'Resources' },
-    
+  const featureItems = useMemo(() => {
+    const noticesCard = {
+      id: 'notices',
+      titleKey: 'dashboard.notices',
+      subtitleKey: 'dashboard.noticesSubtitle',
+      titleFallback: 'Notices',
+      subtitleFallback: 'Admin announcements',
+      iconName: 'notifications-outline',
+      route: 'StudentNotices' as const,
+      color: '#6366F1',
+      badgeCount: unreadNotices,
+    };
 
-    // 🔥 NEW FEATURE
-    {
-      id: 8,
-      title: 'My Certificates',
-      icon: '📄',
-      gradient: ['#22C55E', '#16A34A'],
-      screen: 'StudentBonafideList',
-    },
-    {
-  id: 11,
-  title: 'Apply Leave',
-  icon: '📝',
-  gradient: ['#f7971e', '#ffd200'],
-  screen: 'ApplyLeave',
-},
-{
-  id: 20,
-  title: 'My Leaves',
-  icon: '📄',
-  gradient: ['#22c55e', '#16a34a'],
-  screen: 'StudentLeaveList',
-},
-{
-  id: 30,
-  title: 'Assignments',
-  icon: '📝',
-  gradient: ['#f59e0b', '#f97316'],
-  screen: 'StudentAssignments',
-},
-  ];
+    return [...studentFeatures, noticesCard].map(item => ({
+      id: item.id,
+      title: safeTranslate(item.titleKey, item.titleFallback),
+      subtitle: safeTranslate(item.subtitleKey, item.subtitleFallback),
+      iconName: item.iconName,
+      color: item.color,
+      badgeCount: item.badgeCount,
+      route: item.route,
+    }));
+  }, [safeTranslate, unreadNotices]);
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366F1" />
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <>
-      <StatusBar barStyle="light-content" backgroundColor="#1F2937" />
-      <View style={styles.container}>
-        <ScrollView
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        >
-          {/* HEADER */}
-          <Animated.View style={{ opacity: fadeAnim }}>
-            <LinearGradient colors={['#1F2937', '#374151']} style={styles.header}>
-              <View style={styles.topBar}>
-                <View>
-                  <Text style={styles.welcome}>Welcome back</Text>
-                  <Text style={styles.name}>{userData?.name || 'Student'} 👋</Text>
-                </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.headerStart} />
+      <DashboardHeader
+        role="student"
+        userName={userData?.name || 'Student'}
+        subtitle={safeTranslate('dashboard.welcome', 'Welcome back')}
+        profilePhotoUrl={profilePhotoUrl}
+        onProfilePress={() => navigation.navigate('StudentProfile')}
+        onSettingsPress={() => navigation.navigate('StudentSettings')}
+      />
 
-                <View style={styles.headerRight}>
-                  <TouchableOpacity onPress={() => navigation.navigate('StudentSettings' as any)} style={styles.gearButton}>
-                    <Text style={styles.gearIcon}>⚙️</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => navigation.navigate('StudentProfile' as any)}>
-                    {profilePhotoUrl ? (
-                      <Image source={{ uri: profilePhotoUrl }} style={styles.avatar} />
-                    ) : (
-                      <View style={styles.avatarPlaceholder}>
-                        <Text style={styles.avatarText}>
-                          {userData?.name?.charAt(0) || 'S'}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </LinearGradient>
-          </Animated.View>
+      <View style={styles.content}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            {safeTranslate('dashboard.studentTitle', 'Student Dashboard')}
+          </Text>
+          <Text style={[styles.sectionMeta, { color: colors.textSecondary }]}>
+            {featureItems.length}
+          </Text>
+        </View>
 
-          {/* FEATURES */}
-          <View style={styles.grid}>
-            {features.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.card}
-                onPress={() => navigation.navigate(item.screen as any)}
-              >
-                <LinearGradient colors={item.gradient} style={styles.iconBox}>
-                  <Text style={styles.icon}>{item.icon}</Text>
-                </LinearGradient>
-                <Text style={styles.title}>{item.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* BONAFIDE APPLY BUTTON */}
-          <TouchableOpacity
-            style={styles.bonafideBtn}
-            onPress={() => navigation.navigate('ApplyBonafide')}
-          >
-            <Text style={styles.bonafideText}>📜 Apply Bonafide Certificate</Text>
-          </TouchableOpacity>
-
-          {/* LOGOUT IN SETTINGS NOW */}
-        </ScrollView>
+        <FeatureGrid
+          data={featureItems}
+          numColumns={numColumns}
+          cardWidth={cardWidth}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          onPressItem={item => navigation.navigate(item.route as any)}
+          contentBottomPadding={48}
+        />
       </View>
-    </>
+    </SafeAreaView>
   );
 };
 
-export default StudentHome;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-
-  header: {
-    padding: 25,
-    paddingTop: 50,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  welcome: { color: '#9CA3AF' },
-  name: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-
-  avatar: { width: 45, height: 45, borderRadius: 25 },
-  avatarPlaceholder: {
-    width: 45,
-    height: 45,
-    borderRadius: 25,
-    backgroundColor: '#6366F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-
-  card: {
-    width: (width - 48) / 2,
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-
-  iconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-
-  icon: { fontSize: 28 },
-  title: { fontWeight: '600' },
-
-  bonafideBtn: {
-    margin: 20,
-    backgroundColor: '#10B981',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-
-  bonafideText: { color: '#fff', fontWeight: 'bold' },
-
-  logout: {
-    margin: 20,
-    backgroundColor: '#EF4444',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-
-  logoutText: { color: '#fff', fontWeight: 'bold' },
-
-  modal: {
+  safe: {
     flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
   },
-
-  modalContent: {
-    backgroundColor: '#fff',
-    margin: 20,
-    padding: 20,
-    borderRadius: 10,
-  },
-
   center: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  avatarText: {
-    color: '#fff',
+  content: {
+    flex: 1,
+    paddingHorizontal: dashboardTheme.spacing.screenPadding,
+    paddingTop: 16,
   },
-  closeText: {
-    marginTop: 20,
-  },
-  headerRight: {
+  sectionHeader: {
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
   },
-  gearButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  sectionTitle: {
+    fontSize: dashboardTheme.typography.dashboardTitle,
+    fontWeight: '800',
   },
-  gearIcon: {
-    fontSize: 20,
+  sectionMeta: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
+
+export default StudentHome;

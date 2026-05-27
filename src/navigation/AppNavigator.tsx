@@ -1,6 +1,11 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  DarkTheme,
+  DefaultTheme,
+  NavigationContainer,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useAppTheme } from '../theme/appTheme';
 
 import LoginScreen from '../screens/LoginScreen';
 
@@ -15,6 +20,8 @@ export type RootStackParamList = {
   CreateMeeting: undefined;
   MeetingViewer: undefined;
   Attendance: undefined;
+  StudentAttendance: undefined;
+  SubjectAttendanceDetails: any;
   Signup: undefined;
   FaceEnrollment: { userData: any };
   AdminHome: undefined;
@@ -31,9 +38,11 @@ export type RootStackParamList = {
   UploadResult: undefined;
   ViewResults: undefined;
   Library: undefined;
-  GroupChat: undefined;
+  GroupChat: any;
   CreateTeacherGroup: undefined;
+  CreateGroup: undefined;
   TeacherGroups: undefined;
+  StudentGroups: undefined;
   GroupMembers: undefined;
   UploadResource: undefined;
   Resources: undefined;
@@ -50,6 +59,7 @@ export type RootStackParamList = {
   StudentLeaveList: undefined;
   StudentProfile: undefined;
   StudentSettings: undefined;
+  TeacherSettings: undefined;
   BonafideCertificateView: { certificate: any };
   CreateAssignment: undefined;
   StudentAssignments: undefined;
@@ -59,6 +69,26 @@ export type RootStackParamList = {
   EventGallery: undefined;
   CreateGalleryPost: undefined;
   MyGalleryPosts: undefined;
+  StudentNotices: undefined;
+  TeacherNotices: undefined;
+
+  // New screens
+  ForgotPassword: undefined;
+  PrivacySecurity: undefined;
+  AboutACAMS: undefined;
+  FAQ: undefined;
+  TeacherAssignments: undefined;
+  AssignmentSubmissions: { assignmentId: string };
+  ReviewSubmission: { assignmentId: string; studentId: string };
+  AssignmentDetails: { assignmentId: string };
+  SubmitAssignment: any;
+  // E-Library screens
+  ELibrary: undefined;
+  LibraryResourceDetails: { resource: any };
+  MyBookmarkedResources: undefined;
+  TeacherELibrary: undefined;
+  UploadLibraryResource: undefined;
+  ACAMSChatBot: undefined;
 };
 import StudentHome from '../screens/StudentHome';
 import TeacherHome from '../screens/TeacherHome';
@@ -75,9 +105,10 @@ import FaceEnrollmentScreen from '../screens/auth/FaceEnrollmentScreen';
 import UploadResultScreen from '../screens/UploadResultScreen';
 import ViewResultsScreen from '../screens/ViewResultsScreen';
 import LibraryScreen from '../screens/LibraryScreen';
-import GroupChatScreen from '../screens/GroupChatScreen';
-import CreateTeacherGroupScreen from '../screens/CreateTeacherGroupScreen';
-import TeacherGroupsScreen from '../screens/TeacherGroupsScreen';
+import GroupChatScreen from '../screens/groups/GroupChatScreen';
+import CreateGroupScreen from '../screens/teacher/CreateGroupScreen';
+import TeacherGroupsScreen from '../screens/teacher/TeacherGroupsScreen';
+import StudentGroupsScreen from '../screens/student/StudentGroupsScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import UploadResourceScreen from '../screens/UploadResourceScreen';
 import ResourcesScreen from '../screens/ResourcesScreen';
@@ -96,12 +127,34 @@ import TeacherLeaveRequestsScreen from '../screens/TeacherLeaveRequestsScreen';
 import StudentLeaveListScreen from '../screens/StudentLeaveListScreen';
 import StudentProfileScreen from '../screens/StudentProfileScreen';
 import StudentSettingsScreen from '../screens/StudentSettingsScreen';
+import TeacherSettingsScreen from '../screens/TeacherSettingsScreen';
 import BonafideCertificateViewScreen from '../screens/BonafideCertificateViewScreen';
 import CreateAssignmentScreen from '../screens/CreateAssignmentScreen';
 import StudentAssignmentListScreen from '../screens/StudentAssignmentListScreen';
 import TeacherAttendanceSetupScreen from '../screens/TeacherAttendanceSetupScreen';
 import TeacherLiveAttendanceScreen from '../screens/TeacherLiveAttendanceScreen';
 import AttendanceReviewScreen from '../screens/AttendanceReviewScreen';
+
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
+import AboutACAMSScreen from '../screens/AboutACAMSScreen';
+import FAQScreen from '../screens/FAQScreen';
+import TeacherAssignmentsScreen from '../screens/TeacherAssignmentsScreen';
+import AssignmentSubmissionsScreen from '../screens/AssignmentSubmissionsScreen';
+import ReviewSubmissionScreen from '../screens/ReviewSubmissionScreen';
+import AssignmentDetailsScreen from '../screens/AssignmentDetailsScreen';
+import SubmitAssignmentScreen from '../screens/SubmitAssignmentScreen';
+
+import ELibraryScreen from '../screens/ELibraryScreen';
+import LibraryResourceDetailsScreen from '../screens/LibraryResourceDetailsScreen';
+import MyBookmarkedResourcesScreen from '../screens/MyBookmarkedResourcesScreen';
+import TeacherELibraryScreen from '../screens/TeacherELibraryScreen';
+import UploadLibraryResourceScreen from '../screens/UploadLibraryResourceScreen';
+import ACAMSChatBotScreen from '../screens/ACAMSChatBotScreen';
+import StudentNoticesScreen from '../screens/StudentNoticesScreen';
+import TeacherNoticesScreen from '../screens/TeacherNoticesScreen';
+import StudentAttendanceScreen from '../screens/student/StudentAttendanceScreen';
+import SubjectAttendanceDetailsScreen from '../screens/student/SubjectAttendanceDetailsScreen';
 
 import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
 import RejectedTeacherScreen from '../screens/auth/RejectedTeacherScreen';
@@ -129,8 +182,25 @@ const withErrorBoundary = (ScreenComponent: React.ComponentType<any>) => {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
+  const { colors, isDark } = useAppTheme();
+  const navigationTheme = React.useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.danger,
+      },
+    }),
+    [colors, isDark],
+  );
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="StudentHome" component={StudentHome} />
@@ -149,8 +219,10 @@ const AppNavigator = () => {
 <Stack.Screen name="ViewResults" component={ViewResultsScreen} />
 <Stack.Screen name="Library" component={LibraryScreen} />
 <Stack.Screen name="GroupChat" component={GroupChatScreen} />
-<Stack.Screen name="CreateTeacherGroup" component={CreateTeacherGroupScreen} />
+<Stack.Screen name="CreateTeacherGroup" component={CreateGroupScreen} />
+<Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
 <Stack.Screen name="TeacherGroups" component={TeacherGroupsScreen} />
+<Stack.Screen name="StudentGroups" component={StudentGroupsScreen} />
 <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
 <Stack.Screen name="UploadResource" component={UploadResourceScreen} />
 <Stack.Screen name="Resources" component={ResourcesScreen} />
@@ -160,6 +232,8 @@ const AppNavigator = () => {
   name="Attendance" 
   component={AttendanceScreen} 
 />
+<Stack.Screen name="StudentAttendance" component={StudentAttendanceScreen} />
+<Stack.Screen name="SubjectAttendanceDetails" component={SubjectAttendanceDetailsScreen} />
 <Stack.Screen name="ApplyBonafide" component={ApplyBonafideScreen} />
 <Stack.Screen name="AdminHome" component={withErrorBoundary(AdminHomeScreen)} />
 <Stack.Screen name="TeacherApprovals" component={withErrorBoundary(TeacherApprovalsScreen)} />
@@ -193,6 +267,7 @@ const AppNavigator = () => {
 />
 <Stack.Screen name="StudentProfile" component={StudentProfileScreen} />
 <Stack.Screen name="StudentSettings" component={StudentSettingsScreen} />
+<Stack.Screen name="TeacherSettings" component={TeacherSettingsScreen} />
 <Stack.Screen name="BonafideCertificateView" component={BonafideCertificateViewScreen} />
 <Stack.Screen
   name="CreateAssignment"
@@ -205,7 +280,27 @@ const AppNavigator = () => {
 <Stack.Screen name="TeacherAttendanceSetup" component={TeacherAttendanceSetupScreen} />
 <Stack.Screen name="TeacherLiveAttendance" component={TeacherLiveAttendanceScreen} />
 <Stack.Screen name="AttendanceReview" component={AttendanceReviewScreen} />
+<Stack.Screen name="StudentNotices" component={StudentNoticesScreen} />
+<Stack.Screen name="TeacherNotices" component={TeacherNoticesScreen} />
 
+{/* New Screens */}
+<Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+<Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+<Stack.Screen name="AboutACAMS" component={AboutACAMSScreen} />
+<Stack.Screen name="FAQ" component={FAQScreen} />
+<Stack.Screen name="TeacherAssignments" component={TeacherAssignmentsScreen} />
+<Stack.Screen name="AssignmentSubmissions" component={AssignmentSubmissionsScreen} />
+<Stack.Screen name="ReviewSubmission" component={ReviewSubmissionScreen} />
+<Stack.Screen name="AssignmentDetails" component={AssignmentDetailsScreen} />
+<Stack.Screen name="SubmitAssignment" component={SubmitAssignmentScreen} />
+
+{/* E-Library Screens */}
+<Stack.Screen name="ELibrary" component={ELibraryScreen} />
+<Stack.Screen name="LibraryResourceDetails" component={LibraryResourceDetailsScreen} />
+<Stack.Screen name="MyBookmarkedResources" component={MyBookmarkedResourcesScreen} />
+<Stack.Screen name="TeacherELibrary" component={TeacherELibraryScreen} />
+<Stack.Screen name="UploadLibraryResource" component={UploadLibraryResourceScreen} />
+<Stack.Screen name="ACAMSChatBot" component={ACAMSChatBotScreen} />
 
       </Stack.Navigator>
     </NavigationContainer>

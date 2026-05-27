@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,47 +18,46 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
 
   const [records, setRecords] = useState<Record<string, AttendanceRecord>>(initialRecords || {});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittedSessionId, setSubmittedSessionId] = useState<string | null>(null);
 
-  // Initialize absent records for students who weren't marked present
-  useEffect(() => {
-    const initializedRecords = { ...initialRecords };
-    let hasChanges = false;
+  const dateKey = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-    students.forEach((student: ClassStudent) => {
-      if (!initializedRecords[student.uid]) {
-        initializedRecords[student.uid] = {
-          studentId: student.uid,
-          studentName: student.name,
-          rollNo: student.rollNo,
-          department: filter.department,
-          year: filter.year,
-          semester: filter.semester,
-          subject: filter.subject,
-          status: 'absent',
-          markedBy: teacherId,
-          method: 'manual_teacher',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        hasChanges = true;
-      }
-    });
+  const buildDefaultAbsentRecord = (student: ClassStudent): AttendanceRecord => ({
+    studentId: student.uid,
+    studentName: student.name,
+    rollNo: student.rollNo,
+    department: filter.department,
+    year: filter.year,
+    semester: filter.semester,
+    subject: filter.subject,
+    date: dateKey,
+    status: 'absent',
+    markedBy: teacherId,
+    teacherName,
+    method: 'manual',
+    matchScore: null,
+    markedAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
-    if (hasChanges) {
-      setRecords(initializedRecords);
-    }
-  }, [students, initialRecords, filter, teacherId]);
+  const getRecordForStudent = (student: ClassStudent): AttendanceRecord =>
+    records[student.uid] || buildDefaultAbsentRecord(student);
 
   const toggleStatus = (uid: string) => {
     setRecords(prev => {
       const current = prev[uid];
+      if (!current) {
+        return prev;
+      }
       const newStatus = current.status === 'present' ? 'absent' : 'present';
       return {
         ...prev,
         [uid]: {
           ...current,
           status: newStatus,
-          method: 'manual_teacher', // mark that it was overridden manually
+          method: 'manual',
+          matchScore: newStatus === 'present' ? current.matchScore ?? null : null,
           updatedAt: new Date(),
         },
       };
@@ -68,7 +67,20 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const recordArray = Object.values(records);
+      const recordArray: AttendanceRecord[] = students.map((student: ClassStudent) => {
+        const existing = records[student.uid];
+        if (existing) {
+          return {
+            ...existing,
+            teacherName,
+            date: existing.date || dateKey,
+            markedBy: existing.markedBy || teacherId,
+            method: existing.method || 'manual',
+            matchScore: existing.matchScore ?? null,
+          };
+        }
+        return buildDefaultAbsentRecord(student);
+      });
       const totalStudents = recordArray.length;
       const totalPresent = recordArray.filter(r => r.status === 'present').length;
       const totalAbsent = totalStudents - totalPresent;
@@ -83,18 +95,19 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
 
       // 2. Batch write all records
       await submitAttendanceSession(
-        sessionId,
-        {
-          totalPresent,
-          totalAbsent,
-          status: 'submitted',
-        },
+              sessionId,
+              {
+                teacherId,
+                teacherName,
+                totalPresent,
+                totalAbsent,
+                status: 'submitted',
+              },
         recordArray
       );
 
       Alert.alert('Success', 'Attendance submitted successfully!');
-      navigation.navigate('TeacherHome');
-
+      setSubmittedSessionId(sessionId);
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Failed to submit attendance. Please try again.');
@@ -103,7 +116,72 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
     }
   };
 
-  const presentCount = Object.values(records).filter(r => r.status === 'present').length;
+  const presentCount = students.filter((student: ClassStudent) => {
+    const record = records[student.uid];
+    return record?.status === 'present';
+  }).length;
+
+  if (submittedSessionId) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={['#10B981', '#059669']} style={styles.header}>
+          <Text style={styles.headerTitle}>Attendance Saved ✅</Text>
+          <Text style={styles.headerSubtitle}>{filter.subject} - {filter.department} Yr {filter.year}</Text>
+        </LinearGradient>
+
+        <View style={styles.exportContainer}>
+          <Text style={styles.exportTitle}>Export Options</Text>
+          <Text style={styles.exportSubtitle}>Share or print this attendance session.</Text>
+
+          <TouchableOpacity style={styles.exportBtn} onPress={async () => {
+            const { exportAttendanceToCSV, shareAttendanceFile } = await import('../services/attendance/attendanceExportService');
+            try {
+              const path = await exportAttendanceToCSV(submittedSessionId);
+              await shareAttendanceFile(path, 'text/csv');
+            } catch (e: any) { Alert.alert('Export Error', e.message); }
+          }}>
+            <Text style={styles.exportBtnText}>📄 Export CSV</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.exportBtn} onPress={async () => {
+            const { exportAttendanceToXLSX, shareAttendanceFile } = await import('../services/attendance/attendanceExportService');
+            try {
+              const path = await exportAttendanceToXLSX(submittedSessionId);
+              await shareAttendanceFile(path, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            } catch (e: any) { Alert.alert('Export Error', e.message); }
+          }}>
+            <Text style={styles.exportBtnText}>📊 Export Excel (XLSX)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.exportBtn} onPress={async () => {
+            const { exportAttendanceToPDF, shareAttendanceFile } = await import('../services/attendance/attendanceExportService');
+            try {
+              const path = await exportAttendanceToPDF(submittedSessionId);
+              await shareAttendanceFile(path, 'application/pdf');
+            } catch (e: any) { Alert.alert('Export Error', e.message); }
+          }}>
+            <Text style={styles.exportBtnText}>📕 Export PDF</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.exportBtn} onPress={async () => {
+            const { printAttendancePDF } = await import('../services/attendance/attendanceExportService');
+            try {
+              await printAttendancePDF(submittedSessionId);
+            } catch (e: any) { Alert.alert('Print Error', e.message); }
+          }}>
+            <Text style={styles.exportBtnText}>🖨️ Print Attendance</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.submitBtn, { marginTop: 30 }]} 
+            onPress={() => navigation.navigate('TeacherHome')}
+          >
+            <Text style={styles.submitBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -129,8 +207,7 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
 
       <ScrollView style={styles.list}>
         {students.map((student: ClassStudent) => {
-          const record = records[student.uid];
-          if (!record) return null;
+          const record = getRecordForStudent(student);
 
           const isPresent = record.status === 'present';
 
@@ -144,10 +221,24 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
                 )}
               </View>
 
-              <TouchableOpacity
-                style={[styles.toggleBtn, isPresent ? styles.btnPresent : styles.btnAbsent]}
-                onPress={() => toggleStatus(student.uid)}
-              >
+                <TouchableOpacity
+                  style={[styles.toggleBtn, isPresent ? styles.btnPresent : styles.btnAbsent]}
+                  onPress={() => {
+                    if (records[student.uid]) {
+                      toggleStatus(student.uid);
+                      return;
+                    }
+                    setRecords(prev => ({
+                      ...prev,
+                      [student.uid]: {
+                        ...buildDefaultAbsentRecord(student),
+                        status: 'present',
+                        method: 'manual',
+                        updatedAt: new Date(),
+                      },
+                    }));
+                  }}
+                >
                 <Text style={styles.toggleBtnText}>
                   {isPresent ? 'PRESENT' : 'ABSENT'}
                 </Text>
@@ -245,8 +336,28 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   backBtn: {
-    marginTop: 15,
+    marginTop: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   backBtnText: { color: '#6B7280', fontSize: 16, fontWeight: '600' },
+  
+  exportContainer: { padding: 20, flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, marginTop: 20 },
+  exportTitle: { fontSize: 20, fontWeight: 'bold', color: '#1F2937' },
+  exportSubtitle: { fontSize: 14, color: '#6B7280', marginBottom: 20 },
+  exportBtn: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  exportBtnText: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
 });

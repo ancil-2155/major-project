@@ -47,6 +47,9 @@ export const euclideanDistance = (emb1: number[], emb2: number[]): number => {
   return Math.sqrt(sum);
 };
 
+// Backward-compatible alias used by attendance matching service.
+export const l2Distance = euclideanDistance;
+
 /**
  * Calculates Cosine Similarity between two embeddings.
  * Returns a value between -1 and 1, where 1 means identical.

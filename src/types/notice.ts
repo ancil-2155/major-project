@@ -1,14 +1,37 @@
 import { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
-import { UserRole } from './user';
 
-export type TargetRole = UserRole | 'all';
+export type TargetRole = 'all' | 'student' | 'teacher' | 'parent';
+export type NoticePriority = 'normal' | 'important' | 'urgent';
+export type NoticeStatus = 'active' | 'hidden' | 'expired' | 'deleted';
+export type TargetEducationLevel = 'all' | 'school' | 'btech' | 'college';
 
 export interface Notice {
-  id?: string;
+  noticeId: string;
+  
   title: string;
   message: string;
+
   targetRole: TargetRole;
+  targetEducationLevel: TargetEducationLevel;
+  targetDepartmentCode: string | null;
+  targetYearNumber: number | null;
+  targetSemesterNumber: number | null;
+  targetClassLevel: string | null;
+
+  priority: NoticePriority;
+  status: NoticeStatus;
+
   createdBy: string;
-  createdAt: FirebaseFirestoreTypes.Timestamp | Date | any;
-  updatedAt: FirebaseFirestoreTypes.Timestamp | Date | any;
+  createdByName: string | null;
+  createdByRole: 'admin';
+
+  createdAt: FirebaseFirestoreTypes.Timestamp | any;
+  updatedAt: FirebaseFirestoreTypes.Timestamp | any;
+  
+  expiresAt: FirebaseFirestoreTypes.Timestamp | any | null;
+}
+
+export interface NoticeReadReceipt {
+  userId: string;
+  readAt: FirebaseFirestoreTypes.Timestamp | any;
 }

@@ -13,11 +13,30 @@ export const createGalleryPost = async (
     
     const newPost: GalleryPost = {
       ...postData,
+      uploaderName: postData.uploaderName || 'Unknown User',
+      uploaderRole: postData.uploaderRole || 'student',
+      uploaderPhotoUrl: postData.uploaderPhotoUrl || null,
+      thumbnailUrl: postData.thumbnailUrl || null,
+      cloudinaryResourceType: postData.cloudinaryResourceType || postData.mediaType,
+      format: postData.format || null,
+      width: postData.width ?? null,
+      height: postData.height ?? null,
+      duration: postData.duration ?? null,
+      bytes: postData.bytes ?? null,
+      visibility: postData.visibility || 'school',
+      department: postData.department || null,
+      year: postData.year || null,
+      semester: postData.semester || null,
+      classLevel: postData.classLevel || null,
+      section: postData.section || null,
       postId: docRef.id,
       likeCount: 0,
       commentCount: 0,
+      status: postData.status || 'approved',
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp(),
+      approvedBy: postData.approvedBy || null,
+      approvedAt: postData.approvedAt || null,
     };
 
     const cleanData = removeUndefinedFields(newPost);
@@ -46,7 +65,7 @@ export const likePost = async (postId: string, userId: string, userName: string)
     await firestore().runTransaction(async (transaction) => {
       const likeDoc = await transaction.get(likeRef);
       if (likeDoc.exists) {
-        throw new Error('User already liked this post.');
+        return { alreadyLiked: true };
       }
 
       const postDoc = await transaction.get(postRef);
@@ -78,7 +97,7 @@ export const unlikePost = async (postId: string, userId: string) => {
     await firestore().runTransaction(async (transaction) => {
       const likeDoc = await transaction.get(likeRef);
       if (!likeDoc.exists) {
-        throw new Error('User has not liked this post.');
+        return { notLiked: true };
       }
 
       const postDoc = await transaction.get(postRef);
@@ -110,10 +129,12 @@ export const checkUserLiked = async (postId: string, userId: string): Promise<bo
     .doc(userId)
     .get();
   
-  return likeDoc.exists;
+  return typeof (likeDoc as any).exists === 'function'
+    ? (likeDoc as any).exists()
+    : Boolean((likeDoc as any).exists);
 };
 
-export const deleteOwnPendingPost = async (postId: string, userId: string) => {
+export const deleteOwnPost = async (postId: string, userId: string) => {
   try {
     const postRef = firestore().collection(GALLERY_COLLECTION).doc(postId);
     const postDoc = await postRef.get();
@@ -125,9 +146,12 @@ export const deleteOwnPendingPost = async (postId: string, userId: string) => {
       throw new Error('You can only delete your own posts');
     }
     
-    // Cloudinary media cleanup needs to be handled via backend in a real scenario
-    // For now, just delete the Firestore doc
-    await postRef.delete();
+    // Soft delete since Cloudinary media cleanup requires backend
+    await postRef.update({
+      status: 'deleted',
+      deletedAt: firestore.FieldValue.serverTimestamp(),
+      deletedBy: userId
+    });
   } catch (error) {
     console.error('Error deleting post:', error);
     throw error;

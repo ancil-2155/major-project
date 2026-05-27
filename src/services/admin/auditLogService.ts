@@ -1,6 +1,7 @@
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import { AdminAuditLog } from '../../types/admin';
+import { sanitizeFirestoreData } from '../../utils/firestoreSanitizer';
 
 export const logAdminAction = async (
   action: string,
@@ -26,19 +27,19 @@ export const logAdminAction = async (
       // Ignore
     }
 
-    const logEntry: AdminAuditLog = {
-      adminId: currentUser.uid,
-      adminName,
-      action,
-      targetUserId,
-      targetRole,
-      details,
+    const logEntry = sanitizeFirestoreData({
+      adminId: currentUser.uid || 'unknown_admin',
+      adminName: adminName || null,
+      action: action || 'unknown_action',
+      targetUserId: targetUserId || null,
+      targetRole: targetRole || null,
+      details: details || null,
       createdAt: firestore.FieldValue.serverTimestamp(),
-    };
+    });
 
     await firestore().collection('adminAuditLogs').add(logEntry);
   } catch (error) {
-    console.error('Failed to log admin action:', error);
+    console.warn('[AuditLog] Failed to log admin action:', error);
     // Non-blocking failure
   }
 };

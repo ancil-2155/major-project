@@ -2,7 +2,7 @@ import { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
 export type AttendanceSessionStatus = 'active' | 'submitted' | 'cancelled';
 export type AttendanceRecordStatus = 'present' | 'absent';
-export type AttendanceMethod = 'face_auto' | 'manual_teacher';
+export type AttendanceMethod = 'face_auto' | 'manual';
 
 export interface AttendanceSession {
   sessionId: string;
@@ -29,13 +29,15 @@ export interface AttendanceRecord {
   year: string;
   semester: string;
   subject: string;
+  date: string;
   status: AttendanceRecordStatus;
-  matchScore?: number;
-  matchedAt?: FirebaseFirestoreTypes.Timestamp | Date;
+  matchScore?: number | null;
   markedBy: string;
+  teacherName?: string;
   method: AttendanceMethod;
-  createdAt: FirebaseFirestoreTypes.Timestamp | Date;
-  updatedAt: FirebaseFirestoreTypes.Timestamp | Date;
+  markedAt?: FirebaseFirestoreTypes.Timestamp | Date;
+  createdAt?: FirebaseFirestoreTypes.Timestamp | Date;
+  updatedAt?: FirebaseFirestoreTypes.Timestamp | Date;
 }
 
 export interface AttendanceSummary {

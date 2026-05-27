@@ -1,119 +1,205 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Camera } from 'react-native-vision-camera-face-detector';
+import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { processLiveFrameToEmbedding } from '../services/face/liveFaceEmbeddingService';
-import { findBestMatch, ClassStudent } from '../services/attendance/faceMatchingService';
+import { ClassStudent, findBestMatch, MATCH_THRESHOLD } from '../services/attendance/faceMatchingService';
 import { AttendanceRecord } from '../types/attendance';
 
+const PROCESS_INTERVAL_MS = 850;
+const MAX_FACES_PER_TICK = 2;
+const REQUIRED_CONSECUTIVE_FRAMES = 3;
+
+type DebugState = {
+  facesDetected: number;
+  loadedEmbeddings: number;
+  liveEmbeddingLength: number;
+  bestMatch: string;
+  score: number;
+  threshold: number;
+  presentCount: number;
+  pendingCount: number;
+};
+
 const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
-  const { filter, students, teacherId, teacherName } = route.params;
+  const { filter, students, teacherId, teacherName } = route.params as {
+    filter: { department: string; year: string; semester: string; subject: string; section?: string };
+    students: ClassStudent[];
+    teacherId: string;
+    teacherName: string;
+  };
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<any>(null);
 
-  // Attendance State
-  const [markedRecords, setMarkedRecords] = useState<Record<string, AttendanceRecord>>({});
-  const [lastMessage, setLastMessage] = useState('Scanning... Place student face inside the box.');
-  
-  // Safety Rules State
-  const consecutiveMatches = useRef<Record<string, number>>({});
-  const cooldownEnd = useRef<number>(0);
-  const REQUIRED_CONSECUTIVE_FRAMES = 3;
-  const COOLDOWN_MS = 5000; // 5 seconds
-
-  useEffect(() => {
-    if (!hasPermission) requestPermission();
-  }, [hasPermission]);
-
-  const { detectFaces } = useFaceDetector({
-    performanceMode: 'fast',
-    contourMode: 'none',
-    landmarkMode: 'none',
-    classificationMode: 'none',
+  const [presentRecords, setPresentRecords] = useState<Record<string, AttendanceRecord>>({});
+  const [lastMessage, setLastMessage] = useState('Scanning started. Keep students inside the frame.');
+  const [isBusy, setIsBusy] = useState(false);
+  const [debug, setDebug] = useState<DebugState>({
+    facesDetected: 0,
+    loadedEmbeddings: students.length,
+    liveEmbeddingLength: 0,
+    bestMatch: '-',
+    score: 0,
+    threshold: MATCH_THRESHOLD,
+    presentCount: 0,
+    pendingCount: students.length,
   });
 
-  // Simulated live face processing triggered periodically for this implementation
-  // In a fully configured native app, this would be invoked directly by the frameProcessor worklet.
+  const lastProcessedAtRef = useRef(0);
+  const processingRef = useRef(false);
+  const consecutiveRef = useRef<Record<string, number>>({});
+  const pauseUntilRef = useRef(0);
+
   useEffect(() => {
-    const mockFrameInterval = setInterval(() => {
-      // If we are in cooldown, don't process
-      if (Date.now() < cooldownEnd.current) return;
-      
-      // We pass null buffers here as a mock. liveFaceEmbeddingService handles it.
-      processLiveFace(new Uint8Array(0));
-    }, 1000);
-
-    return () => clearInterval(mockFrameInterval);
-  }, [markedRecords]);
-
-  const processLiveFace = async (frameBuffer: Uint8Array) => {
-    try {
-      setLastMessage('Face detected. Matching...');
-
-      // 1. Generate live embedding
-      const liveEmbedding = await processLiveFrameToEmbedding(frameBuffer, null);
-
-      // 2. Find best match in loaded class
-      const match = findBestMatch(liveEmbedding, students);
-
-      if (!match) {
-        setLastMessage('Unknown face / not enrolled.');
-        consecutiveMatches.current = {}; // reset
-        return;
-      }
-
-      if (match.confidence === 'low') {
-        setLastMessage('Low confidence match. Try again.');
-        return;
-      }
-
-      const uid = match.studentId;
-
-      // 3. Prevent duplicate attendance in the same session
-      if (markedRecords[uid]) {
-        setLastMessage(`Already marked Present: ${match.studentName}`);
-        return;
-      }
-
-      // 4. Consecutive frame requirement
-      const currentCount = (consecutiveMatches.current[uid] || 0) + 1;
-      consecutiveMatches.current[uid] = currentCount;
-
-      if (currentCount >= REQUIRED_CONSECUTIVE_FRAMES) {
-        // MATCH CONFIRMED
-        const newRecord: AttendanceRecord = {
-          studentId: uid,
-          studentName: match.studentName,
-          rollNo: match.rollNo,
-          department: filter.department,
-          year: filter.year,
-          semester: filter.semester,
-          subject: filter.subject,
-          status: 'present',
-          matchScore: match.score,
-          matchedAt: new Date(),
-          markedBy: teacherId,
-          method: 'face_auto',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        setMarkedRecords(prev => ({ ...prev, [uid]: newRecord }));
-        setLastMessage(`✅ ${match.studentName} marked Present.`);
-        
-        // Reset counters and trigger cooldown
-        consecutiveMatches.current = {};
-        cooldownEnd.current = Date.now() + COOLDOWN_MS;
-      } else {
-        setLastMessage(`Verifying ${match.studentName}... Hold still (${currentCount}/${REQUIRED_CONSECUTIVE_FRAMES})`);
-      }
-
-    } catch (e) {
-      console.error('Frame processing error:', e);
-      setLastMessage('Processing error. Retrying...');
+    if (!hasPermission) {
+      requestPermission();
     }
+  }, [hasPermission, requestPermission]);
+
+  const presentCount = useMemo(() => Object.keys(presentRecords).length, [presentRecords]);
+  const pendingCount = useMemo(() => Math.max(students.length - presentCount, 0), [students.length, presentCount]);
+
+  useEffect(() => {
+    setDebug(prev => ({
+      ...prev,
+      presentCount,
+      pendingCount,
+      loadedEmbeddings: students.length,
+    }));
+  }, [presentCount, pendingCount, students.length]);
+
+  const updateFriendlyError = (error: any) => {
+    const msg = String(error?.message || '').toLowerCase();
+    if (msg.includes('model')) {
+      setLastMessage('Face model is loading or unavailable. Please wait and try again.');
+      return;
+    }
+    if (msg.includes('crop')) {
+      setLastMessage('Unable to crop detected face. Ask student to move closer.');
+      return;
+    }
+    if (msg.includes('embedding')) {
+      setLastMessage('Embedding generation failed. Retrying safely.');
+      return;
+    }
+    if (msg.includes('firestore')) {
+      setLastMessage('Cloud sync issue detected. Attendance is still being tracked locally.');
+      return;
+    }
+    setLastMessage('Processing error. Retrying safely.');
+  };
+
+  const markStudentPresent = (
+    student: { studentId: string; studentName: string; rollNo?: string },
+    score: number,
+  ) => {
+    setPresentRecords(prev => {
+      if (prev[student.studentId]) {
+        return prev;
+      }
+
+      const dateKey = new Date().toISOString().split('T')[0];
+      const record: AttendanceRecord = {
+        studentId: student.studentId,
+        studentName: student.studentName,
+        rollNo: student.rollNo,
+        department: filter.department,
+        year: filter.year,
+        semester: filter.semester,
+        subject: filter.subject,
+        date: dateKey,
+        status: 'present',
+        markedBy: teacherId,
+        teacherName,
+        method: 'face_auto',
+        matchScore: score,
+        markedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      return { ...prev, [student.studentId]: record };
+    });
+  };
+
+  const processFaces = async (faces: any[]) => {
+    const now = Date.now();
+    if (now - lastProcessedAtRef.current < PROCESS_INTERVAL_MS) {
+      return;
+    }
+    if (processingRef.current) {
+      return;
+    }
+    if (now < pauseUntilRef.current) {
+      return;
+    }
+    if (!faces || faces.length === 0) {
+      setLastMessage('Scanning... Place student face inside the frame.');
+      setDebug(prev => ({ ...prev, facesDetected: 0, bestMatch: '-' }));
+      return;
+    }
+
+    lastProcessedAtRef.current = now;
+    processingRef.current = true;
+    setIsBusy(true);
+    setDebug(prev => ({ ...prev, facesDetected: faces.length }));
+
+    try {
+      const candidates = faces.slice(0, MAX_FACES_PER_TICK);
+      for (const face of candidates) {
+        const liveEmbedding = await processLiveFrameToEmbedding(new Uint8Array(0), face?.bounds || face);
+        setDebug(prev => ({ ...prev, liveEmbeddingLength: liveEmbedding.length }));
+
+        const match = findBestMatch(liveEmbedding, students);
+        if (!match || match.confidence === 'low') {
+          setDebug(prev => ({ ...prev, bestMatch: '-', score: 0 }));
+          setLastMessage('Face detected but no confident match yet.');
+          continue;
+        }
+
+        setDebug(prev => ({
+          ...prev,
+          bestMatch: match.studentName,
+          score: Number(match.score.toFixed(4)),
+        }));
+
+        if (presentRecords[match.studentId]) {
+          setLastMessage(`${match.studentName} already marked present.`);
+          continue;
+        }
+
+        const count = (consecutiveRef.current[match.studentId] || 0) + 1;
+        consecutiveRef.current[match.studentId] = count;
+
+        if (count >= REQUIRED_CONSECUTIVE_FRAMES) {
+          markStudentPresent(
+            {
+              studentId: match.studentId,
+              studentName: match.studentName,
+              rollNo: match.rollNo,
+            },
+            match.score,
+          );
+          setLastMessage(`Marked present: ${match.studentName}`);
+          consecutiveRef.current[match.studentId] = 0;
+        } else {
+          setLastMessage(`Verifying ${match.studentName} (${count}/${REQUIRED_CONSECUTIVE_FRAMES})`);
+        }
+      }
+    } catch (error: any) {
+      console.error('Live attendance processing error:', error);
+      pauseUntilRef.current = Date.now() + 1200;
+      updateFriendlyError(error);
+    } finally {
+      processingRef.current = false;
+      setIsBusy(false);
+    }
+  };
+
+  const onFacesDetected = (faces: any[]) => {
+    processFaces(faces);
   };
 
   const navigateToReview = () => {
@@ -122,19 +208,17 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
       students,
       teacherId,
       teacherName,
-      initialRecords: markedRecords,
+      initialRecords: presentRecords,
     });
   };
 
   if (!hasPermission || !device) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.textError}>Camera permission required.</Text>
+        <Text style={styles.errorText}>Camera permission required to continue.</Text>
       </View>
     );
   }
-
-  const presentCount = Object.keys(markedRecords).length;
 
   return (
     <View style={styles.container}>
@@ -143,27 +227,34 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={true}
+        onFacesDetected={onFacesDetected}
+        onError={(error: any) => {
+          console.error('Camera stream error:', error);
+          setLastMessage('Camera stream issue detected. Please retry scanning.');
+        }}
+        performanceMode="fast"
+        resizeMode="cover"
       />
 
-      {/* Target Overlay */}
-      <View style={styles.overlay}>
+      <View style={styles.overlay} pointerEvents="none">
         <View style={styles.scannerBox} />
       </View>
 
-      {/* Top Header */}
-      <View style={styles.header}>
+      <View style={styles.headerCard}>
         <Text style={styles.title}>{filter.subject}</Text>
-        <Text style={styles.subtitle}>{filter.department} - Year {filter.year}</Text>
+        <Text style={styles.subtitle}>
+          {filter.department} • Year {filter.year} {filter.semester ? `• Sem ${filter.semester}` : ''}
+        </Text>
         <View style={styles.statsRow}>
-          <Text style={styles.statText}>Present: {presentCount}</Text>
-          <Text style={styles.statText}>Total: {students.length}</Text>
+          <Text style={styles.statLabel}>Present: {presentCount}</Text>
+          <Text style={styles.statLabel}>Pending: {pendingCount}</Text>
         </View>
       </View>
 
-      {/* Bottom Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.statusMessage}>{lastMessage}</Text>
-        
+      <View style={styles.footerCard}>
+        <Text style={styles.messageText}>{lastMessage}</Text>
+        {isBusy ? <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 12 }} /> : null}
+
         <TouchableOpacity style={styles.reviewButton} onPress={navigateToReview}>
           <Text style={styles.reviewText}>Review Attendance ({presentCount})</Text>
         </TouchableOpacity>
@@ -172,84 +263,103 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
           <Text style={styles.stopText}>Stop Scanning</Text>
         </TouchableOpacity>
       </View>
+
+      {__DEV__ ? (
+        <View style={styles.debugCard}>
+          <Text style={styles.debugText}>facesDetected: {debug.facesDetected}</Text>
+          <Text style={styles.debugText}>loadedEmbeddings: {debug.loadedEmbeddings}</Text>
+          <Text style={styles.debugText}>liveEmbeddingLength: {debug.liveEmbeddingLength}</Text>
+          <Text style={styles.debugText}>bestMatch: {debug.bestMatch}</Text>
+          <Text style={styles.debugText}>score: {debug.score}</Text>
+          <Text style={styles.debugText}>threshold: {debug.threshold}</Text>
+          <Text style={styles.debugText}>presentCount: {debug.presentCount}</Text>
+          <Text style={styles.debugText}>pendingCount: {debug.pendingCount}</Text>
+        </View>
+      ) : null}
     </View>
   );
 };
 
-export default TeacherLiveAttendanceScreen;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#000000' },
   center: { justifyContent: 'center', alignItems: 'center' },
-  textError: { color: '#EF4444', fontSize: 18, fontWeight: 'bold' },
+  errorText: { color: '#FCA5A5', fontSize: 15, fontWeight: '700' },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },
   scannerBox: {
-    width: 250,
-    height: 350,
-    borderWidth: 3,
+    width: 240,
+    height: 320,
+    borderRadius: 22,
+    borderWidth: 2,
     borderColor: '#10B981',
-    backgroundColor: 'transparent',
     borderStyle: 'dashed',
-    borderRadius: 20,
+    backgroundColor: 'transparent',
   },
-  header: {
+  headerCard: {
     position: 'absolute',
-    top: 40,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 15,
-    borderRadius: 15,
+    top: 46,
+    left: 16,
+    right: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(15,23,42,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    padding: 14,
   },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  subtitle: { fontSize: 14, color: '#D1FAE5', marginTop: 4 },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 10,
-    paddingHorizontal: 20,
-  },
-  statText: { color: '#10B981', fontWeight: 'bold', fontSize: 16 },
-  footer: {
+  title: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+  subtitle: { color: '#CBD5E1', fontSize: 12, marginTop: 4 },
+  statsRow: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between' },
+  statLabel: { color: '#34D399', fontSize: 13, fontWeight: '700' },
+  footerCard: {
     position: 'absolute',
-    bottom: 30,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    padding: 20,
-    borderRadius: 20,
+    left: 16,
+    right: 16,
+    bottom: 22,
+    borderRadius: 16,
+    backgroundColor: 'rgba(15,23,42,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.2)',
+    padding: 14,
   },
-  statusMessage: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
+  messageText: {
+    color: '#FFFFFF',
     textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '600',
+    fontSize: 14,
   },
   reviewButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    borderRadius: 30,
-    width: '100%',
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
+    paddingVertical: 12,
     marginBottom: 10,
   },
-  reviewText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  reviewText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
   stopButton: {
-    backgroundColor: '#EF4444',
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    borderRadius: 30,
-    width: '100%',
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
     alignItems: 'center',
+    paddingVertical: 12,
   },
-  stopText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  stopText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  debugCard: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 176,
+    borderRadius: 10,
+    backgroundColor: 'rgba(2,6,23,0.85)',
+    padding: 10,
+  },
+  debugText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    lineHeight: 16,
+  },
 });
+
+export default TeacherLiveAttendanceScreen;

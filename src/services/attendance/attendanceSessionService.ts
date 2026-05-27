@@ -1,4 +1,4 @@
-import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { AttendanceSession, AttendanceRecord } from '../../types/attendance';
 import { ClassFilter } from '../../types/teacher';
 
@@ -63,9 +63,26 @@ export const submitAttendanceSession = async (
     // Using studentId as the doc ID ensures no duplicate records for the same student in this session.
     records.forEach(record => {
       const recordRef = sessionRef.collection('records').doc(record.studentId);
+      const normalizedDate = record.date || new Date().toISOString().split('T')[0];
       const recordData = {
-        ...record,
-        createdAt: record.createdAt instanceof Date ? record.createdAt : firestore.FieldValue.serverTimestamp(),
+        studentId: record.studentId,
+        studentName: record.studentName,
+        rollNo: record.rollNo || '',
+        department: record.department,
+        year: record.year,
+        semester: record.semester,
+        subject: record.subject,
+        date: normalizedDate,
+        status: record.status,
+        markedBy: record.markedBy,
+        teacherName: record.teacherName || sessionData.teacherName || '',
+        method: record.method,
+        matchScore: record.matchScore ?? null,
+        markedAt: firestore.FieldValue.serverTimestamp(),
+        createdAt:
+          record.createdAt instanceof Date
+            ? record.createdAt
+            : firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp(),
       };
       batch.set(recordRef, recordData, { merge: true });
@@ -90,7 +107,10 @@ export const submitAttendanceSession = async (
         dateKey,
         status: record.status,
         method: record.method,
-        matchScore: record.matchScore || null,
+        teacherName: record.teacherName || sessionData.teacherName || '',
+        date: record.date || dateKey,
+        matchScore: record.matchScore ?? null,
+        markedAt: firestore.FieldValue.serverTimestamp(),
         createdAt: firestore.FieldValue.serverTimestamp(),
       });
     });
