@@ -5,8 +5,8 @@ import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { Worklets } from 'react-native-worklets';
 import firestore from '@react-native-firebase/firestore';
 
-import { findClosestMatch, StudentFaceData } from '../../services/face/attendanceMatcherService';
-import { generateFaceEmbedding } from '../../services/face/faceEmbeddingService';
+import { findClosestMatch, StudentFaceData } from '../services/face/attendanceMatcherService';
+import { generateFaceEmbedding } from '../services/face/faceEmbeddingService';
 
 const TakeAttendanceScreen = ({ route, navigation }: any) => {
   const { filters } = route.params;
@@ -68,23 +68,44 @@ const TakeAttendanceScreen = ({ route, navigation }: any) => {
       const dbData: StudentFaceData[] = [];
 
       for (const chunk of chunks) {
-        const embedSnap = await firestore()
-          .collection('faceEmbeddings')
-          .where('uid', 'in', chunk)
-          .get();
+        const directDocs = await Promise.all(
+          chunk.map(uid => firestore().collection('faceEmbeddings').doc(uid).get())
+        );
 
-        embedSnap.docs.forEach(doc => {
-          const embData = doc.data();
-          const uid = embData.uid;
-          if (embData.embedding) {
+        const foundIds = new Set<string>();
+        directDocs.forEach(doc => {
+          if (!doc.exists) return;
+          const embData = doc.data() || {};
+          const uid = embData.studentId || doc.id;
+          if (userMap[uid] && Array.isArray(embData.embedding) && embData.embedding.length === 128) {
+            foundIds.add(uid);
             dbData.push({
-              uid: uid,
+              uid,
               name: userMap[uid].name,
               rollNo: userMap[uid].rollNo,
               embedding: embData.embedding,
             });
           }
         });
+
+        const missingIds = chunk.filter(uid => !foundIds.has(uid));
+        for (const uid of missingIds) {
+          const fallbackSnap = await firestore()
+            .collection('faceEmbeddings')
+            .where('studentId', '==', uid)
+            .limit(1)
+            .get();
+          if (fallbackSnap.empty) continue;
+          const embData = fallbackSnap.docs[0].data() || {};
+          if (Array.isArray(embData.embedding) && embData.embedding.length === 128) {
+            dbData.push({
+              uid,
+              name: userMap[uid].name,
+              rollNo: userMap[uid].rollNo,
+              embedding: embData.embedding,
+            });
+          }
+        }
       }
 
       setStudentDatabase(dbData);

@@ -1,41 +1,91 @@
+import { Platform } from 'react-native';
 import { loadTensorflowModel } from 'react-native-fast-tflite';
 import { normalizeEmbedding } from './embeddingMathService';
+import { FaceBounds, preprocessImageToFaceNetInput } from './faceImagePreprocessor';
 
-// Global cache for the model so we don't load it multiple times
+const EXPECTED_EMBEDDING_SIZE = 128;
+const MODEL_PATH_LABEL = 'src/assets/models/facenet.tflite';
+const MODEL_ASSET = require('../../assets/models/facenet.tflite');
+
 let faceModel: any = null;
+
+export type FaceModelDiagnostics = {
+  modelLoaded: boolean;
+  modelPath: string;
+  inputShape: unknown;
+  outputShape: unknown;
+  lastModelError: string | null;
+};
+
+let diagnostics: FaceModelDiagnostics = {
+  modelLoaded: false,
+  modelPath: MODEL_PATH_LABEL,
+  inputShape: null,
+  outputShape: null,
+  lastModelError: null,
+};
 
 export const loadFaceNetModel = async () => {
   if (faceModel) return faceModel;
   try {
-    // IMPORTANT: The 'facenet.tflite' file must be placed in:
-    // E:\at cams new\NEW-ONE--main\NEW-ONE--main\src\assets\models\facenet.tflite
-    // Note: If you want to use MobileFaceNet for better performance later, replace the model file.
-    // TODO: Optimize bundle size using MobileFaceNet if needed.
-    faceModel = await loadTensorflowModel(require('../../assets/models/facenet.tflite'), 'core-ml');
-    console.log('FaceNet Model loaded successfully.');
+    faceModel =
+      Platform.OS === 'ios'
+        ? await loadTensorflowModel(MODEL_ASSET, 'core-ml')
+        : await loadTensorflowModel(MODEL_ASSET);
+
+    diagnostics = {
+      modelLoaded: true,
+      modelPath: MODEL_PATH_LABEL,
+      inputShape: faceModel?.inputs?.[0]?.shape || faceModel?.inputShape || null,
+      outputShape: faceModel?.outputs?.[0]?.shape || faceModel?.outputShape || null,
+      lastModelError: null,
+    };
+    console.log('[FaceAttendance] FaceNet model loaded', diagnostics);
     return faceModel;
   } catch (error) {
-    console.error('Failed to load FaceNet model:', error);
+    diagnostics = {
+      ...diagnostics,
+      modelLoaded: false,
+      lastModelError: error instanceof Error ? error.message : String(error),
+    };
+    console.error('[FaceAttendance] Failed to load FaceNet model:', error);
     throw error;
   }
 };
 
-/**
- * Generates a 128D embedding for a given cropped face image buffer.
- * Pre-requisite: 
- * - The image must be cropped strictly to the face bounds.
- * - Resized to 160x160 RGB.
- * - Converted to Uint8Array/Float32Array based on model quantization.
- */
-export const generateFaceEmbedding = async (imageBuffer: Uint8Array): Promise<number[]> => {
+export const getFaceModelDiagnostics = (): FaceModelDiagnostics => diagnostics;
+
+export const isFaceModelLoaded = () => diagnostics.modelLoaded && !!faceModel;
+
+export const generateFaceEmbedding = async (
+  modelInput: Float32Array | Uint8Array | number[]
+): Promise<number[]> => {
   const model = await loadFaceNetModel();
   if (!model) throw new Error('Model not loaded');
 
-  // Run the model (This assumes imageBuffer is properly pre-processed into a Flat Tensor array)
-  const outputBuffer = await model.run([imageBuffer]);
-  
-  // Convert output to standard array and normalize it immediately.
-  // FaceNet typically outputs a 128-float array.
-  const embeddingArray = Array.from(outputBuffer[0] as Float32Array);
+  const input =
+    modelInput instanceof Float32Array || modelInput instanceof Uint8Array
+      ? modelInput
+      : Float32Array.from(modelInput);
+
+  const outputBuffer = model.runSync
+    ? model.runSync([input])
+    : await model.run([input]);
+
+  const rawOutput = Array.isArray(outputBuffer) ? outputBuffer[0] : outputBuffer;
+  const embeddingArray = Array.from(rawOutput as Float32Array | number[]);
+
+  if (embeddingArray.length !== EXPECTED_EMBEDDING_SIZE) {
+    throw new Error(`Unexpected FaceNet embedding length: ${embeddingArray.length}`);
+  }
+
   return normalizeEmbedding(embeddingArray);
+};
+
+export const generateFaceEmbeddingFromImage = async (
+  imagePath: string,
+  faceBounds?: FaceBounds | null
+): Promise<number[]> => {
+  const input = await preprocessImageToFaceNetInput(imagePath, faceBounds);
+  return generateFaceEmbedding(input);
 };

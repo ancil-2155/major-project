@@ -1,7 +1,7 @@
 import firestore from '@react-native-firebase/firestore';
 import * as RNFS from 'react-native-fs';
 import Share from 'react-native-share';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNPrint from 'react-native-print';
 import { Platform } from 'react-native';
@@ -30,9 +30,9 @@ const buildExportRows = (sessionData: any, records: any[]) => {
     'Sl. No.': index + 1,
     'Roll No.': r.rollNo || 'N/A',
     'Student Name': r.studentName || 'Unknown',
-    'Department/Class': r.department || r.classLevel || 'N/A',
-    'Year/Semester': `${r.year || ''} / ${r.semester || ''}`,
-    'Subject': r.subject || sessionData.filter?.subject || 'N/A',
+    'Department/Class': r.department || sessionData.department || sessionData.classLevel || 'N/A',
+    'Year/Semester': `${r.year || sessionData.year || ''} / ${r.semester || sessionData.semester || ''}`,
+    'Subject': r.subject || sessionData.subject || sessionData.filter?.subject || 'N/A',
     'Status': r.status ? r.status.toUpperCase() : 'UNKNOWN',
     'Method': r.method === 'face_auto' ? 'Auto (Face)' : 'Manual',
   }));
@@ -42,28 +42,62 @@ const buildExportRows = (sessionData: any, records: any[]) => {
 
 const getFileNamePrefix = (sessionData: any) => {
   const dateStr = new Date().toISOString().split('T')[0];
-  const dept = sessionData.filter?.department || sessionData.filter?.classLevel || 'Dept';
-  const sub = sessionData.filter?.subject ? sessionData.filter.subject.replace(/[^a-zA-Z0-9]/g, '') : 'Sub';
+  const rawDept = sessionData.department || sessionData.classLevel || sessionData.filter?.department || sessionData.filter?.classLevel || 'Dept';
+  const dept = String(rawDept).replace(/[^a-zA-Z0-9]/g, '');
+  const subject = sessionData.subject || sessionData.filter?.subject || 'Sub';
+  const sub = String(subject).replace(/[^a-zA-Z0-9]/g, '');
   return `Attendance_${dept}_${sub}_${dateStr}`;
+};
+
+const escapeCsvValue = (value: any) => {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+};
+
+const buildCsv = (rows: Array<Record<string, any>>) => {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [
+    headers.map(escapeCsvValue).join(','),
+    ...rows.map(row => headers.map(header => escapeCsvValue(row[header])).join(',')),
+  ];
+  return lines.join('\n');
+};
+
+const assertFileExists = async (filePath: string | undefined | null) => {
+  if (!filePath) {
+    throw new Error('Export did not return a valid file path.');
+  }
+  const normalizedPath = filePath.startsWith('file://') ? filePath.replace('file://', '') : filePath;
+  const exists = await RNFS.exists(normalizedPath);
+  if (!exists) {
+    throw new Error(`Export file was not created: ${normalizedPath}`);
+  }
+  return normalizedPath;
 };
 
 export const exportAttendanceToCSV = async (sessionId: string) => {
   const { sessionData, records } = await fetchSessionAndRecords(sessionId);
   const rows = buildExportRows(sessionData, records);
-  
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const csvStr = XLSX.utils.sheet_to_csv(worksheet);
+  const csvStr = buildCsv(rows);
   
   const fileName = `${getFileNamePrefix(sessionData)}.csv`;
   const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
   
   await RNFS.writeFile(filePath, csvStr, 'utf8');
-  return filePath;
+  return assertFileExists(filePath);
 };
 
 export const exportAttendanceToXLSX = async (sessionId: string) => {
   const { sessionData, records } = await fetchSessionAndRecords(sessionId);
   const rows = buildExportRows(sessionData, records);
+
+  if (!XLSX?.utils?.json_to_sheet || !XLSX?.write) {
+    throw new Error('Excel export temporarily unavailable');
+  }
   
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -76,13 +110,18 @@ export const exportAttendanceToXLSX = async (sessionId: string) => {
   const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
   
   await RNFS.writeFile(filePath, wbout, 'base64');
-  return filePath;
+  return assertFileExists(filePath);
 };
 
 export const generateAttendanceHTML = (sessionData: any, records: any[]) => {
   const rows = buildExportRows(sessionData, records);
   
-  const dateStr = sessionData.createdAt ? sessionData.createdAt.toDate().toLocaleDateString() : new Date().toLocaleDateString();
+  const createdAtDate = sessionData.createdAt?.toDate
+    ? sessionData.createdAt.toDate()
+    : sessionData.createdAt instanceof Date
+    ? sessionData.createdAt
+    : null;
+  const dateStr = createdAtDate ? createdAtDate.toLocaleDateString() : new Date().toLocaleDateString();
   
   let html = `
     <html>
@@ -103,12 +142,12 @@ export const generateAttendanceHTML = (sessionData: any, records: any[]) => {
         <h1>ACAMS Attendance Report</h1>
         <div class="header-info">
           <p><strong>Teacher:</strong> ${sessionData.teacherName || 'Unknown'}</p>
-          <p><strong>Subject:</strong> ${sessionData.filter?.subject || 'N/A'}</p>
-          <p><strong>Department/Class:</strong> ${sessionData.filter?.department || sessionData.filter?.classLevel || 'N/A'}</p>
+          <p><strong>Subject:</strong> ${sessionData.subject || sessionData.filter?.subject || 'N/A'}</p>
+          <p><strong>Department/Class:</strong> ${sessionData.department || sessionData.classLevel || sessionData.filter?.department || sessionData.filter?.classLevel || 'N/A'}</p>
           <p><strong>Date:</strong> ${dateStr}</p>
           <p><strong>Total Students:</strong> ${sessionData.totalStudents || rows.length}</p>
-          <p><strong>Present:</strong> ${sessionData.totalPresent || rows.filter(r => r.Status === 'PRESENT').length}</p>
-          <p><strong>Absent:</strong> ${sessionData.totalAbsent || rows.filter(r => r.Status === 'ABSENT').length}</p>
+          <p><strong>Present:</strong> ${sessionData.presentCount ?? sessionData.totalPresent ?? rows.filter(r => r.Status === 'PRESENT').length}</p>
+          <p><strong>Absent:</strong> ${sessionData.absentCount ?? sessionData.totalAbsent ?? rows.filter(r => r.Status === 'ABSENT').length}</p>
         </div>
         <table>
           <thead>
@@ -150,6 +189,10 @@ export const exportAttendanceToPDF = async (sessionId: string) => {
   const html = generateAttendanceHTML(sessionData, records);
   
   const fileName = getFileNamePrefix(sessionData);
+
+  if (!RNHTMLtoPDF?.convert) {
+    throw new Error('PDF export is temporarily unavailable');
+  }
   
   const options = {
     html,
@@ -158,7 +201,7 @@ export const exportAttendanceToPDF = async (sessionId: string) => {
   };
   
   const file = await RNHTMLtoPDF.convert(options);
-  return file.filePath;
+  return assertFileExists(file?.filePath);
 };
 
 export const printAttendancePDF = async (sessionId: string) => {
@@ -168,9 +211,10 @@ export const printAttendancePDF = async (sessionId: string) => {
 };
 
 export const shareAttendanceFile = async (filePath: string | undefined, mimeType: string) => {
-  if (!filePath) throw new Error("Invalid file path");
+  const verifiedPath = await assertFileExists(filePath);
   
-  const fileUrl = Platform.OS === 'android' ? `file://${filePath}` : filePath;
+  const fileUrl = Platform.OS === 'android' ? `file://${verifiedPath}` : verifiedPath;
+  if (!fileUrl) throw new Error('Invalid share URI');
   
   await Share.open({
     url: fileUrl,

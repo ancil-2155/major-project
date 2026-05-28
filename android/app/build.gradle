@@ -38,6 +38,16 @@ android {
         }
     }
 
+    sourceSets {
+        main {
+            assets.srcDirs += ["../../src/assets/models"]
+        }
+    }
+
+    androidResources {
+        noCompress += ["tflite"]
+    }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

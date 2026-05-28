@@ -1,244 +1,229 @@
 import firestore from '@react-native-firebase/firestore';
 import { ClassFilter } from '../../types/teacher';
-import { ClassStudent } from './faceMatchingService';
 import {
   AttendanceClassConfig,
-  ClassLoadResult,
   ClassLoadDiagnostics,
+  ClassLoadResult,
+  MissingEmbeddingInfo,
+  StudentFaceEmbedding,
+  StudentProfile,
 } from '../../types/academic';
 import {
-  normalizeDepartment,
-  extractYearNumber,
   extractSemesterNumber,
+  extractYearNumber,
+  normalizeDepartment,
 } from '../academic/academicConfigService';
+import { validateFaceEmbeddingDoc } from '../face/faceEmbeddingValidator';
+import { ClassStudent } from './faceMatchingService';
 
-// ═══════════════════════════════════════════════════
-// NEW: Multi-match class loading with detailed diagnostics
-// ═══════════════════════════════════════════════════
+const buildDiagnostics = (config: AttendanceClassConfig): ClassLoadDiagnostics => ({
+  totalUserDocsScanned: 0,
+  totalClassMatched: 0,
+  totalWithEnrollmentFlag: 0,
+  totalWithValidEmbedding: 0,
+  missingDepartmentCount: 0,
+  missingYearCount: 0,
+  missingSemesterCount: 0,
+  missingEmbeddingCount: 0,
+  selectedFilters: {
+    educationLevel: config.educationLevel,
+    departmentCode: config.departmentCode,
+    department: config.department,
+    classLevel: config.classLevel,
+    className: config.className,
+    yearNumber: config.yearNumber,
+    semesterNumber: config.semesterNumber,
+    subject: config.subject,
+  },
+});
+
+const toNumberOrNull = (value: any): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
+const studentFromUserDoc = (doc: any): StudentProfile => {
+  const data = doc.data() || {};
+  return {
+    uid: doc.id,
+    name: data.name || data.studentName || 'Unknown Student',
+    email: data.email || null,
+    rollNo: data.rollNo || null,
+    educationLevel: data.educationLevel || 'btech',
+    departmentCode: data.departmentCode || data.department || null,
+    department: data.department || data.departmentCode || null,
+    yearNumber: toNumberOrNull(data.yearNumber) || extractYearNumber(data.year) || null,
+    semesterNumber:
+      toNumberOrNull(data.semesterNumber) || extractSemesterNumber(data.semester) || null,
+    classLevel: data.classLevel || data.className || null,
+  };
+};
+
+const matchesClass = (
+  student: StudentProfile,
+  data: Record<string, any>,
+  config: AttendanceClassConfig,
+  diagnostics: ClassLoadDiagnostics
+) => {
+  if (config.educationLevel === 'school') {
+    if ((data.educationLevel || student.educationLevel) !== 'school') return false;
+    const selectedClass = String(config.classLevel || config.className || '').toLowerCase().trim();
+    const studentClass = String(student.classLevel || data.className || '').toLowerCase().trim();
+    if (!selectedClass) return true;
+    return (
+      studentClass === selectedClass ||
+      studentClass === `class ${selectedClass}` ||
+      `class ${studentClass}` === selectedClass
+    );
+  }
+
+  const level = data.educationLevel || student.educationLevel || 'btech';
+  if (level !== 'btech' && level !== 'college') return false;
+
+  const deptVariants = config.departmentCode
+    ? normalizeDepartment(config.departmentCode)
+    : config.department
+    ? normalizeDepartment(config.department)
+    : [];
+
+  if (deptVariants.length > 0) {
+    const studentDept = String(student.department || data.department || '').toLowerCase().trim();
+    const studentDeptCode = String(student.departmentCode || data.departmentCode || '')
+      .toLowerCase()
+      .trim();
+    const deptMatched = deptVariants.some(variant => {
+      const lower = variant.toLowerCase().trim();
+      return studentDept === lower || studentDeptCode === lower;
+    });
+    if (!deptMatched) {
+      diagnostics.missingDepartmentCount++;
+      return false;
+    }
+  }
+
+  if (config.yearNumber && student.yearNumber !== config.yearNumber) {
+    diagnostics.missingYearCount++;
+    return false;
+  }
+
+  if (config.semesterNumber && student.semesterNumber !== config.semesterNumber) {
+    diagnostics.missingSemesterCount++;
+    return false;
+  }
+
+  return true;
+};
+
+const loadEmbeddingForStudent = async (
+  student: StudentProfile,
+  userData: Record<string, any>
+): Promise<StudentFaceEmbedding | MissingEmbeddingInfo> => {
+  const directDoc = await firestore().collection('faceEmbeddings').doc(student.uid).get();
+
+  if (directDoc.exists) {
+    const validation = await validateFaceEmbeddingDoc(directDoc, student.uid, userData);
+    if (validation.valid && validation.embedding) {
+      return {
+        ...student,
+        embedding: validation.embedding,
+        embeddingDocId: directDoc.id,
+        modelName: validation.data.modelName,
+        modelVersion: validation.data.modelVersion,
+      };
+    }
+
+    return {
+      ...student,
+      reason:
+        validation.reason === 'Embedding not linked to student'
+          ? 'Embedding not linked to student'
+          : validation.reason || 'Invalid embedding',
+    };
+  }
+
+  const fallbackSnap = await firestore()
+    .collection('faceEmbeddings')
+    .where('studentId', '==', student.uid)
+    .limit(1)
+    .get();
+
+  if (!fallbackSnap.empty) {
+    const fallbackDoc = fallbackSnap.docs[0];
+    const validation = await validateFaceEmbeddingDoc(fallbackDoc, student.uid, userData);
+    if (validation.valid && validation.embedding) {
+      return {
+        ...student,
+        embedding: validation.embedding,
+        embeddingDocId: fallbackDoc.id,
+        modelName: validation.data.modelName,
+        modelVersion: validation.data.modelVersion,
+      };
+    }
+
+    return {
+      ...student,
+      reason: validation.reason || 'Invalid embedding',
+    };
+  }
+
+  return {
+    ...student,
+    reason: 'No embedding found',
+  };
+};
 
 export const loadEnrolledStudentsForAttendance = async (
   config: AttendanceClassConfig
 ): Promise<ClassLoadResult> => {
-  const diagnostics: ClassLoadDiagnostics = {
-    totalUserDocsScanned: 0,
-    totalClassMatched: 0,
-    totalWithEnrollmentFlag: 0,
-    totalWithValidEmbedding: 0,
-    missingDepartmentCount: 0,
-    missingYearCount: 0,
-    missingSemesterCount: 0,
-    missingEmbeddingCount: 0,
-    selectedFilters: {
-      educationLevel: config.educationLevel,
-      departmentCode: config.departmentCode,
-      department: config.department,
-      classLevel: config.classLevel,
-      className: config.className,
-      yearNumber: config.yearNumber,
-      semesterNumber: config.semesterNumber,
-      subject: config.subject,
-    },
-  };
+  const diagnostics = buildDiagnostics(config);
 
-  try {
-    // ── Step 1: Build the broadest safe Firestore query ──
-    let query = firestore().collection('users').where('role', '==', 'student');
+  const usersSnap = await firestore()
+    .collection('users')
+    .where('role', '==', 'student')
+    .get();
 
-    const usersSnap = await query.get();
-    diagnostics.totalUserDocsScanned = usersSnap.docs.length;
+  diagnostics.totalUserDocsScanned = usersSnap.docs.length;
 
-    if (usersSnap.empty) {
-      return { students: [], missingEmbeddingStudents: [], diagnostics };
+  const students: StudentProfile[] = [];
+  const userDataById: Record<string, Record<string, any>> = {};
+
+  usersSnap.docs.forEach(doc => {
+    const data = doc.data() || {};
+    const student = studentFromUserDoc(doc);
+    if (!matchesClass(student, data, config, diagnostics)) return;
+
+    diagnostics.totalClassMatched++;
+    if (data.faceEnrollmentStatus === true) {
+      diagnostics.totalWithEnrollmentFlag++;
     }
+    students.push(student);
+    userDataById[student.uid] = data;
+  });
 
-    // ── Step 2: Strict Class Matching ──
-    const deptVariants = config.departmentCode
-      ? normalizeDepartment(config.departmentCode)
-      : config.department
-      ? normalizeDepartment(config.department)
-      : [];
+  const validEmbeddings: StudentFaceEmbedding[] = [];
+  const missingEmbeddings: MissingEmbeddingInfo[] = [];
 
-    const matchedUsers: Array<{ uid: string; name: string; rollNo?: string; hasEnrollmentFlag: boolean }> = [];
-
-    usersSnap.docs.forEach(doc => {
-      const data = doc.data();
-
-      // Ensure education level matches
-      if (config.educationLevel === 'btech' || config.educationLevel === 'college') {
-        const docLevel = data.educationLevel || 'btech'; // assume btech if missing for legacy
-        if (docLevel !== 'btech' && docLevel !== 'college') return;
-
-        // Strict BTech Match:
-        // Must match Department, Year, Semester
-        
-        let deptMatched = false;
-        let yearMatched = false;
-        let semMatched = false;
-
-        // 1. Department
-        if (deptVariants.length > 0) {
-          const studentDept = (data.department || '').toLowerCase().trim();
-          const studentDeptCode = (data.departmentCode || '').toLowerCase().trim();
-          deptMatched = deptVariants.some(v => {
-            const lv = v.toLowerCase();
-            return studentDept === lv || studentDeptCode === lv;
-          });
-        }
-        if (!deptMatched) { diagnostics.missingDepartmentCount++; return; }
-
-        // 2. Year
-        if (config.yearNumber) {
-          const studentYearNum = data.yearNumber;
-          const studentYearStr = (data.year || '').toLowerCase().trim();
-          yearMatched = 
-            studentYearNum === config.yearNumber || 
-            studentYearStr === String(config.yearNumber) ||
-            studentYearStr === `${config.yearNumber}rd year` ||
-            studentYearStr === `${config.yearNumber}th year` ||
-            studentYearStr === `${config.yearNumber}nd year` ||
-            studentYearStr === `${config.yearNumber}st year` ||
-            studentYearStr.includes(String(config.yearNumber));
-        }
-        if (config.yearNumber && !yearMatched) { diagnostics.missingYearCount++; return; }
-
-        // 3. Semester
-        if (config.semesterNumber) {
-          const studentSemNum = data.semesterNumber;
-          const studentSemStr = (data.semester || '').toLowerCase().trim();
-          semMatched = 
-            studentSemNum === config.semesterNumber || 
-            studentSemStr === String(config.semesterNumber) ||
-            studentSemStr === `semester ${config.semesterNumber}` ||
-            studentSemStr === `sem ${config.semesterNumber}` ||
-            studentSemStr.includes(String(config.semesterNumber));
-        }
-        if (config.semesterNumber && !semMatched) { diagnostics.missingSemesterCount++; return; }
-
-      } else if (config.educationLevel === 'school') {
-        if (data.educationLevel !== 'school') return;
-        
-        // Strict School Match
-        const studentClassLevel = (data.classLevel || data.className || '').toLowerCase().trim();
-        const targetLevel = (config.classLevel || '').toLowerCase().trim();
-        const targetName = (config.className || `class ${config.classLevel}` || '').toLowerCase().trim();
-
-        if (targetLevel) {
-          const classMatch =
-            studentClassLevel === targetLevel ||
-            studentClassLevel === targetName ||
-            studentClassLevel === `class ${targetLevel}`;
-          if (!classMatch) return;
-        }
-      }
-
-      // If we get here, the student matches the class filters exactly!
-      diagnostics.totalClassMatched++;
-      
-      const hasEnrollmentFlag = data.faceEnrollmentStatus === true;
-      if (hasEnrollmentFlag) diagnostics.totalWithEnrollmentFlag++;
-
-      matchedUsers.push({
-        uid: doc.id,
-        name: data.name || 'Unknown Student',
-        rollNo: data.rollNo,
-        hasEnrollmentFlag,
-      });
-    });
-
-    if (matchedUsers.length === 0) {
-      return { students: [], missingEmbeddingStudents: [], diagnostics };
+  for (const student of students) {
+    const result = await loadEmbeddingForStudent(student, userDataById[student.uid] || {});
+    if ('embedding' in result) {
+      validEmbeddings.push(result);
+    } else {
+      missingEmbeddings.push(result);
     }
-
-    // ── Step 3: Load valid embeddings (length >= 128) ──
-    const classUids = matchedUsers.map(u => u.uid);
-    const userMap: Record<string, typeof matchedUsers[0]> = {};
-    matchedUsers.forEach(u => { userMap[u.uid] = u; });
-
-    const chunks: string[][] = [];
-    for (let i = 0; i < classUids.length; i += 10) {
-      chunks.push(classUids.slice(i, i + 10));
-    }
-
-    const classStudents: ClassStudent[] = [];
-    const missingEmbeddingStudents: Array<{ uid: string; name: string; rollNo?: string }> = [];
-    const foundIds = new Set<string>();
-
-    for (const chunk of chunks) {
-      // Fetch documents by ID individually using Promise.all
-      const embedDocsSnaps = await Promise.all(
-        chunk.map(uid => firestore().collection('faceEmbeddings').doc(uid).get())
-      );
-
-      embedDocsSnaps.forEach(doc => {
-        if (!doc.exists) return;
-        const data = doc.data();
-        if (!data) return;
-        
-        // Check for embedding (could be 'embedding' or 'embeddings')
-        const embedding = data.embedding || data.embeddings;
-
-        if (embedding && Array.isArray(embedding) && embedding.length >= 128) {
-          foundIds.add(doc.id);
-          classStudents.push({
-            uid: doc.id,
-            name: userMap[doc.id].name,
-            rollNo: userMap[doc.id].rollNo,
-            embedding: embedding,
-          });
-        }
-      });
-
-      // Fallback query by studentId for old docs
-      const missingChunk = chunk.filter(uid => !foundIds.has(uid));
-      if (missingChunk.length > 0) {
-        const fallbackSnap = await firestore()
-          .collection('faceEmbeddings')
-          .where('studentId', 'in', missingChunk)
-          .get();
-
-        fallbackSnap.docs.forEach(doc => {
-          const embData = doc.data();
-          const uid = embData.studentId;
-          const embedding = embData.embedding || embData.embeddings;
-
-          if (uid && embedding && Array.isArray(embedding) && embedding.length >= 128 && !foundIds.has(uid)) {
-            foundIds.add(uid);
-            classStudents.push({
-              uid,
-              name: userMap[uid].name,
-              rollNo: userMap[uid].rollNo,
-              embedding: embData.embedding,
-            });
-          }
-        });
-      }
-    }
-
-    // Tally missing
-    classUids.forEach(uid => {
-      if (!foundIds.has(uid)) {
-        missingEmbeddingStudents.push({
-          uid,
-          name: userMap[uid].name,
-          rollNo: userMap[uid].rollNo,
-        });
-      }
-    });
-
-    diagnostics.totalWithValidEmbedding = classStudents.length;
-    diagnostics.missingEmbeddingCount = missingEmbeddingStudents.length;
-
-    return { students: classStudents, missingEmbeddingStudents, diagnostics };
-
-  } catch (error) {
-    console.error('Error in loadEnrolledStudentsForAttendance:', error);
-    throw error;
   }
-};
 
-// ═══════════════════════════════════════════════════
-// LEGACY: Keep old function for backwards compatibility
-// ═══════════════════════════════════════════════════
+  diagnostics.totalWithValidEmbedding = validEmbeddings.length;
+  diagnostics.missingEmbeddingCount = missingEmbeddings.length;
+
+  return {
+    students,
+    validEmbeddings,
+    missingEmbeddings,
+    missingEmbeddingStudents: missingEmbeddings,
+    diagnostics,
+  };
+};
 
 export const loadClassEmbeddings = async (
   filter: ClassFilter
@@ -253,5 +238,10 @@ export const loadClassEmbeddings = async (
   };
 
   const result = await loadEnrolledStudentsForAttendance(config);
-  return result.students;
+  return result.validEmbeddings.map(student => ({
+    uid: student.uid,
+    name: student.name,
+    rollNo: student.rollNo || undefined,
+    embedding: student.embedding,
+  }));
 };

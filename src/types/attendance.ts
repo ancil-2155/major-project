@@ -1,6 +1,6 @@
 import { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
-export type AttendanceSessionStatus = 'active' | 'submitted' | 'cancelled';
+export type AttendanceSessionStatus = 'draft' | 'submitted' | 'cancelled' | 'active';
 export type AttendanceRecordStatus = 'present' | 'absent';
 export type AttendanceMethod = 'face_auto' | 'manual';
 
@@ -13,10 +13,20 @@ export interface AttendanceSession {
   semester: string;
   subject: string;
   section?: string;
+  educationLevel?: 'school' | 'btech' | 'college';
+  departmentCode?: string | null;
+  classLevel?: string | null;
+  yearNumber?: number | null;
+  semesterNumber?: number | null;
+  date?: string;
   startedAt: FirebaseFirestoreTypes.Timestamp | Date;
+  createdAt?: FirebaseFirestoreTypes.Timestamp | Date;
+  updatedAt?: FirebaseFirestoreTypes.Timestamp | Date;
   submittedAt: FirebaseFirestoreTypes.Timestamp | Date | null;
   status: AttendanceSessionStatus;
   totalStudents: number;
+  presentCount?: number;
+  absentCount?: number;
   totalPresent: number;
   totalAbsent: number;
 }

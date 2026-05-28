@@ -10,11 +10,11 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { AttendanceRecord } from '../types/attendance';
-import { ClassStudent } from '../services/attendance/faceMatchingService';
+import { StudentProfile } from '../types/academic';
 import { createAttendanceSession, submitAttendanceSession } from '../services/attendance/attendanceSessionService';
 
 const AttendanceReviewScreen = ({ route, navigation }: any) => {
-  const { filter, students, teacherId, teacherName, initialRecords } = route.params;
+  const { filter, classConfig, students, teacherId, teacherName, initialRecords } = route.params;
 
   const [records, setRecords] = useState<Record<string, AttendanceRecord>>(initialRecords || {});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,10 +22,10 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
 
   const dateKey = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  const buildDefaultAbsentRecord = (student: ClassStudent): AttendanceRecord => ({
+  const buildDefaultAbsentRecord = (student: StudentProfile): AttendanceRecord => ({
     studentId: student.uid,
     studentName: student.name,
-    rollNo: student.rollNo,
+    rollNo: student.rollNo || undefined,
     department: filter.department,
     year: filter.year,
     semester: filter.semester,
@@ -41,7 +41,7 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
     updatedAt: new Date(),
   });
 
-  const getRecordForStudent = (student: ClassStudent): AttendanceRecord =>
+  const getRecordForStudent = (student: StudentProfile): AttendanceRecord =>
     records[student.uid] || buildDefaultAbsentRecord(student);
 
   const toggleStatus = (uid: string) => {
@@ -67,7 +67,7 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const recordArray: AttendanceRecord[] = students.map((student: ClassStudent) => {
+      const recordArray: AttendanceRecord[] = students.map((student: StudentProfile) => {
         const existing = records[student.uid];
         if (existing) {
           return {
@@ -90,7 +90,8 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
         teacherId,
         teacherName,
         filter,
-        totalStudents
+        totalStudents,
+        classConfig
       );
 
       // 2. Batch write all records
@@ -116,7 +117,7 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
     }
   };
 
-  const presentCount = students.filter((student: ClassStudent) => {
+  const presentCount = students.filter((student: StudentProfile) => {
     const record = records[student.uid];
     return record?.status === 'present';
   }).length;
@@ -206,7 +207,7 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
       </View>
 
       <ScrollView style={styles.list}>
-        {students.map((student: ClassStudent) => {
+        {students.map((student: StudentProfile) => {
           const record = getRecordForStudent(student);
 
           const isPresent = record.status === 'present';

@@ -9,12 +9,17 @@ import {
 } from 'react-native';
 import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { Camera } from 'react-native-vision-camera-face-detector';
+import firestore from '@react-native-firebase/firestore';
 
 import { signUpStudent, signInStudent } from '../../services/firebase/authService';
 import { saveUserRecord, saveFaceEmbeddings } from '../../services/firebase/userService';
 import { uploadProfilePhoto } from '../../services/firebase/storageSafeService';
 import { averageEmbeddings } from '../../services/face/embeddingMathService';
-import { User, FaceEmbeddingsDoc } from '../../types/user';
+import {
+  generateFaceEmbeddingFromImage,
+  getFaceModelDiagnostics,
+  loadFaceNetModel,
+} from '../../services/face/faceEmbeddingService';
 
 type FaceCaptureStep = 'front' | 'left' | 'right' | 'done';
 
@@ -30,6 +35,8 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
 
   const [step, setStep] = useState<FaceCaptureStep>('front');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   
   // Real-time UI states for face validation
   const [isValidFace, setIsValidFace] = useState(false);
@@ -49,6 +56,25 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
     if (!hasPermission) {
       requestPermission();
     }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    loadFaceNetModel()
+      .then(() => {
+        if (!mounted) return;
+        setModelReady(true);
+        setModelError(null);
+      })
+      .catch(error => {
+        if (!mounted) return;
+        setModelReady(false);
+        setModelError(error instanceof Error ? error.message : String(error));
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Handle real-time face detection
@@ -126,8 +152,14 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
       const photoPath = await image.saveToTemporaryFileAsync('jpg', 85);
       console.log('Snapshot captured at:', photoPath);
 
-      // Generate dummy embedding (128-dim) — replace with TFLite model later
-      const embedding = Array.from({ length: 128 }, () => Math.random());
+      if (!modelReady) {
+        const diagnostics = getFaceModelDiagnostics();
+        throw new Error(
+          diagnostics.lastModelError || modelError || 'Face recognition model is not ready.'
+        );
+      }
+
+      const embedding = await generateFaceEmbeddingFromImage(photoPath, null);
 
       if (step === 'front') {
         setFrontImage(photoPath);
@@ -194,16 +226,14 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
       const faceData = {
         studentId: firebaseUser.uid,
         studentName: userData.name || '',
-        studentEmail: userData.email || '',
-        rollNo: userData.rollNo || '',
-        department: userData.department || '',
-        departmentCode: userData.departmentCode || userData.department || '',
-        year: userData.year || '',
-        yearNumber: userData.yearNumber || null,
-        semester: userData.semester || '',
-        semesterNumber: userData.semesterNumber || null,
-        section: userData.section || '',
+        studentEmail: userData.email || null,
+        rollNo: userData.rollNo || null,
         educationLevel: userData.educationLevel || 'btech',
+        departmentCode: userData.departmentCode || userData.department || null,
+        department: userData.department || userData.departmentCode || null,
+        yearNumber: userData.yearNumber || null,
+        semesterNumber: userData.semesterNumber || null,
+        classLevel: userData.classLevel || userData.className || null,
         
         embedding: finalEmbedding,
         frontEmbedding,
@@ -214,6 +244,8 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         modelVersion: 'v1',
         embeddingSize: 128,
         qualityScore: 0.95,
+        profilePhotoUrl: photoUrl || null,
+        createdAt: firestore.FieldValue.serverTimestamp(),
       };
       await saveFaceEmbeddings(firebaseUser.uid, faceData);
 
@@ -239,6 +271,7 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         
         faceEnrollmentStatus: true,
         faceEmbeddingDocId: firebaseUser.uid,
+        faceEmbeddingUpdatedAt: firestore.FieldValue.serverTimestamp(),
         faceModelName: 'facenet',
         faceModelVersion: 'v1',
       };
@@ -334,16 +367,18 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
             step === 'done' ? { color: '#667eea' } : isValidFace ? { color: '#10B981' } : { color: '#EF4444' },
           ]}
         >
-          {validationMessage}
+          {!modelReady && step !== 'done'
+            ? 'Face model is loading. Please wait.'
+            : validationMessage}
         </Text>
 
         <TouchableOpacity
           style={[
             styles.captureBtn,
-            (isProcessing || (!isValidFace && step !== 'done')) && styles.captureBtnDisabled,
+            (isProcessing || (!modelReady && step !== 'done') || (!isValidFace && step !== 'done')) && styles.captureBtnDisabled,
           ]}
           onPress={handleCapture}
-          disabled={isProcessing || (!isValidFace && step !== 'done')}
+          disabled={isProcessing || (!modelReady && step !== 'done') || (!isValidFace && step !== 'done')}
           activeOpacity={0.8}
         >
           {isProcessing ? (

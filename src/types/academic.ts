@@ -53,18 +53,35 @@ export interface ClassLoadDiagnostics {
   selectedFilters: Record<string, string | number | undefined>;
 }
 
+export interface StudentProfile {
+  uid: string;
+  name: string;
+  email?: string | null;
+  rollNo?: string | null;
+  educationLevel?: EducationLevel;
+  departmentCode?: string | null;
+  department?: string | null;
+  yearNumber?: number | null;
+  semesterNumber?: number | null;
+  classLevel?: string | null;
+}
+
+export interface StudentFaceEmbedding extends StudentProfile {
+  embedding: number[];
+  embeddingDocId: string;
+  modelName: string;
+  modelVersion?: string;
+}
+
+export interface MissingEmbeddingInfo extends StudentProfile {
+  reason: string;
+}
+
 export interface ClassLoadResult {
-  students: Array<{
-    uid: string;
-    name: string;
-    rollNo?: string;
-    embedding: number[];
-  }>;
-  missingEmbeddingStudents: Array<{
-    uid: string;
-    name: string;
-    rollNo?: string;
-  }>;
+  students: StudentProfile[];
+  validEmbeddings: StudentFaceEmbedding[];
+  missingEmbeddings: MissingEmbeddingInfo[];
+  missingEmbeddingStudents: MissingEmbeddingInfo[];
   diagnostics: ClassLoadDiagnostics;
 }
 

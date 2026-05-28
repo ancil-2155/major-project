@@ -133,7 +133,7 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
   };
 
   const handleStartScanning = async () => {
-    if (!loadResult || loadResult.diagnostics.totalWithValidEmbedding === 0) return;
+    if (!loadResult || loadResult.validEmbeddings.length === 0) return;
 
     const currentUser = auth().currentUser;
     let teacherName = 'Teacher';
@@ -155,6 +155,17 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
     navigation.replace('TeacherLiveAttendance', {
       filter,
       students: loadResult.students,
+      validEmbeddings: loadResult.validEmbeddings,
+      classConfig: {
+        educationLevel,
+        departmentCode: departmentCode || null,
+        department: departmentName || null,
+        classLevel: classLevel || null,
+        className: className || null,
+        yearNumber: yearNumber || null,
+        semesterNumber: semesterNumber || null,
+        subject,
+      },
       teacherId: currentUser?.uid || 'unknown',
       teacherName,
     });
@@ -345,11 +356,11 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
                 <Text style={styles.diagTitle}>No matching student profiles found.</Text>
                 <Text style={styles.diagSub}>Check the department, year, and semester filters. Zero student profiles exist with this configuration.</Text>
               </View>
-            ) : loadResult.diagnostics.totalWithValidEmbedding === 0 ? (
+            ) : loadResult.validEmbeddings.length === 0 ? (
               <View style={styles.diagnosticCardOrange}>
                 <Text style={styles.diagIcon}>⚠️</Text>
-                <Text style={styles.diagTitle}>Students found, but NO valid face embeddings.</Text>
-                <Text style={styles.diagSub}>Matched {loadResult.diagnostics.totalClassMatched} profiles, but none have completed face enrollment. Ask students to enroll.</Text>
+                <Text style={styles.diagTitle}>No valid enrolled face embeddings found for this class.</Text>
+                <Text style={styles.diagSub}>Matched {loadResult.students.length} profiles. Ask students listed below to re-enroll their face.</Text>
               </View>
             ) : (
               <View style={styles.successCard}>
@@ -357,13 +368,13 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
                   <Text style={styles.successIcon}>✅</Text>
                   <View>
                     <Text style={styles.successTitle}>Ready for Scanning</Text>
-                    <Text style={styles.successSub}>{loadResult.diagnostics.totalWithValidEmbedding} students enrolled</Text>
+                    <Text style={styles.successSub}>{loadResult.validEmbeddings.length} valid face embeddings loaded</Text>
                   </View>
                 </View>
                 
-                {loadResult.diagnostics.missingEmbeddingCount > 0 && (
+                {loadResult.missingEmbeddings.length > 0 && (
                   <View style={styles.warningBox}>
-                    <Text style={styles.warningText}>⚠️ {loadResult.diagnostics.missingEmbeddingCount} students are missing face enrollments.</Text>
+                    <Text style={styles.warningText}>⚠️ {loadResult.missingEmbeddings.length} students need face enrollment repair.</Text>
                   </View>
                 )}
                 
@@ -379,13 +390,40 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
               </View>
             )}
 
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryCell}>
+                <Text style={styles.summaryLabel}>Total Students</Text>
+                <Text style={styles.summaryValue}>{loadResult.students.length}</Text>
+              </View>
+              <View style={styles.summaryCell}>
+                <Text style={styles.summaryLabel}>Valid Embeddings</Text>
+                <Text style={styles.summaryValue}>{loadResult.validEmbeddings.length}</Text>
+              </View>
+              <View style={styles.summaryCell}>
+                <Text style={styles.summaryLabel}>Missing</Text>
+                <Text style={styles.summaryValue}>{loadResult.missingEmbeddings.length}</Text>
+              </View>
+            </View>
+
+            {loadResult.missingEmbeddings.length > 0 && (
+              <View style={styles.missingList}>
+                <Text style={styles.missingTitle}>Missing Face Enrollment</Text>
+                {loadResult.missingEmbeddings.slice(0, 20).map(student => (
+                  <View key={student.uid} style={styles.missingRow}>
+                    <Text style={styles.missingName}>{student.name}</Text>
+                    <Text style={styles.missingReason}>{student.reason}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             {/* DEV DIAGNOSTICS (Always visible for clarity) */}
             <View style={styles.debugBox}>
               <Text style={styles.debugTitle}>System Diagnostics:</Text>
               <Text style={styles.debugText}>Profiles Scanned: {loadResult.diagnostics.totalUserDocsScanned}</Text>
               <Text style={styles.debugText}>Class Matches: {loadResult.diagnostics.totalClassMatched}</Text>
               <Text style={styles.debugText}>Enrollment Flag = True: {loadResult.diagnostics.totalWithEnrollmentFlag}</Text>
-              <Text style={styles.debugText}>Valid Embeddings Loaded: {loadResult.diagnostics.totalWithValidEmbedding}</Text>
+              <Text style={styles.debugText}>Valid Embeddings Loaded: {loadResult.validEmbeddings.length}</Text>
               <Text style={styles.debugText}>Selected Filters: {JSON.stringify(loadResult.diagnostics.selectedFilters)}</Text>
             </View>
           </View>
@@ -525,6 +563,37 @@ const styles = StyleSheet.create({
   successSub: { fontSize: 14, color: '#38bdf8' },
   warningBox: { marginTop: 16, backgroundColor: '#451a03', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#78350f' },
   warningText: { color: '#fdba74', fontSize: 13, fontWeight: '500' },
+  summaryGrid: {
+    marginTop: 16,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  summaryCell: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 12,
+  },
+  summaryLabel: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
+  summaryValue: { color: '#f8fafc', fontSize: 20, fontWeight: '800', marginTop: 4 },
+  missingList: {
+    marginTop: 16,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 14,
+  },
+  missingTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '800', marginBottom: 10 },
+  missingRow: {
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  missingName: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  missingReason: { color: '#fdba74', fontSize: 12, marginTop: 3 },
   
   startButton: { marginTop: 20, borderRadius: 12, overflow: 'hidden' },
   startGradient: { paddingVertical: 18, alignItems: 'center' },
