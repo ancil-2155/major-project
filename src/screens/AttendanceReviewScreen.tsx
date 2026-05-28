@@ -11,10 +11,10 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { AttendanceRecord } from '../types/attendance';
 import { StudentProfile } from '../types/academic';
-import { createAttendanceSession, submitAttendanceSession } from '../services/attendance/attendanceSessionService';
+import { submitAttendanceSession } from '../services/attendance/attendanceSessionService';
 
 const AttendanceReviewScreen = ({ route, navigation }: any) => {
-  const { filter, classConfig, students, teacherId, teacherName, initialRecords } = route.params;
+  const { sessionId, filter, students, teacherId, teacherName, initialRecords } = route.params;
 
   const [records, setRecords] = useState<Record<string, AttendanceRecord>>(initialRecords || {});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,6 +67,10 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
+      if (!sessionId) {
+        throw new Error('Attendance session was not created. Please restart attendance.');
+      }
+
       const recordArray: AttendanceRecord[] = students.map((student: StudentProfile) => {
         const existing = records[student.uid];
         if (existing) {
@@ -85,21 +89,12 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
       const totalPresent = recordArray.filter(r => r.status === 'present').length;
       const totalAbsent = totalStudents - totalPresent;
 
-      // 1. Create the session document
-      const sessionId = await createAttendanceSession(
-        teacherId,
-        teacherName,
-        filter,
-        totalStudents,
-        classConfig
-      );
-
-      // 2. Batch write all records
       await submitAttendanceSession(
               sessionId,
               {
                 teacherId,
                 teacherName,
+                totalStudents,
                 totalPresent,
                 totalAbsent,
                 status: 'submitted',
@@ -109,9 +104,9 @@ const AttendanceReviewScreen = ({ route, navigation }: any) => {
 
       Alert.alert('Success', 'Attendance submitted successfully!');
       setSubmittedSessionId(sessionId);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      Alert.alert('Error', 'Failed to submit attendance. Please try again.');
+      Alert.alert('Error', error?.message || 'Failed to submit attendance. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

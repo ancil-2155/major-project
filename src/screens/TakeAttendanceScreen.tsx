@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
-import { Worklets } from 'react-native-worklets';
 import firestore from '@react-native-firebase/firestore';
 
 import { findClosestMatch, StudentFaceData } from '../services/face/attendanceMatcherService';
@@ -19,7 +18,7 @@ const TakeAttendanceScreen = ({ route, navigation }: any) => {
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<any>(null);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -121,9 +120,6 @@ const TakeAttendanceScreen = ({ route, navigation }: any) => {
 
   const { detectFaces } = useFaceDetector({
     performanceMode: 'fast',
-    contourMode: 'none',
-    landmarkMode: 'none',
-    classificationMode: 'none',
   });
 
   // Debouncing setup: Prevent multiple UI updates per second
@@ -253,7 +249,7 @@ const styles = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#fff', marginTop: 12, fontSize: 16 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },

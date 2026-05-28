@@ -9,12 +9,15 @@ const EMBEDDINGS_COLLECTION = 'faceEmbeddings';
  */
 export const saveUserRecord = async (user: User): Promise<void> => {
   const userRef = firestore().collection(USERS_COLLECTION).doc(user.uid);
+  const existingDoc = await userRef.get();
   
   await userRef.set({
     ...user,
-    createdAt: firestore.FieldValue.serverTimestamp(),
+    createdAt: existingDoc.exists
+      ? existingDoc.data()?.createdAt || firestore.FieldValue.serverTimestamp()
+      : firestore.FieldValue.serverTimestamp(),
     updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
+  }, { merge: true });
 };
 
 /**

@@ -29,6 +29,7 @@ export type RootStackParamList = {
   UserManagement: undefined;
   AttendanceAnalytics: undefined;
   NoticeManager: undefined;
+  GalleryManagement: undefined;
   ClassManager: undefined;
   AdminSettings: undefined;
   PendingApproval: undefined;
@@ -44,6 +45,7 @@ export type RootStackParamList = {
   TeacherGroups: undefined;
   StudentGroups: undefined;
   GroupMembers: undefined;
+  GroupInfo: { groupId: string };
   UploadResource: undefined;
   Resources: undefined;
   PDFViewer: { fileUrl: string; fileName?: string };
@@ -71,6 +73,7 @@ export type RootStackParamList = {
   MyGalleryPosts: undefined;
   StudentNotices: undefined;
   TeacherNotices: undefined;
+  NoticeDetails: { noticeId: string };
 
   // New screens
   ForgotPassword: undefined;
@@ -106,6 +109,7 @@ import UploadResultScreen from '../screens/UploadResultScreen';
 import ViewResultsScreen from '../screens/ViewResultsScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import GroupChatScreen from '../screens/groups/GroupChatScreen';
+import GroupInfoScreen from '../screens/groups/GroupInfoScreen';
 import CreateGroupScreen from '../screens/teacher/CreateGroupScreen';
 import TeacherGroupsScreen from '../screens/teacher/TeacherGroupsScreen';
 import StudentGroupsScreen from '../screens/student/StudentGroupsScreen';
@@ -152,6 +156,7 @@ import TeacherELibraryScreen from '../screens/TeacherELibraryScreen';
 import UploadLibraryResourceScreen from '../screens/UploadLibraryResourceScreen';
 import ACAMSChatBotScreen from '../screens/ACAMSChatBotScreen';
 import StudentNoticesScreen from '../screens/StudentNoticesScreen';
+import NoticeDetailsScreen from '../screens/NoticeDetailsScreen';
 import TeacherNoticesScreen from '../screens/TeacherNoticesScreen';
 import StudentAttendanceScreen from '../screens/student/StudentAttendanceScreen';
 import SubjectAttendanceDetailsScreen from '../screens/student/SubjectAttendanceDetailsScreen';
@@ -164,6 +169,7 @@ import TeacherApprovalsScreen from '../screens/admin/TeacherApprovalsScreen';
 import UserManagementScreen from '../screens/admin/UserManagementScreen';
 import AttendanceAnalyticsScreen from '../screens/admin/AttendanceAnalyticsScreen';
 import NoticeManagerScreen from '../screens/admin/NoticeManagerScreen';
+import GalleryManagementScreen from '../screens/admin/GalleryManagementScreen';
 import ClassManagerScreen from '../screens/admin/ClassManagerScreen';
 import AdminSettingsScreen from '../screens/admin/AdminSettingsScreen';
 import ErrorBoundary from '../components/common/ErrorBoundary';
@@ -219,6 +225,7 @@ const AppNavigator = () => {
 <Stack.Screen name="ViewResults" component={ViewResultsScreen} />
 <Stack.Screen name="Library" component={LibraryScreen} />
 <Stack.Screen name="GroupChat" component={GroupChatScreen} />
+<Stack.Screen name="GroupInfo" component={GroupInfoScreen} />
 <Stack.Screen name="CreateTeacherGroup" component={CreateGroupScreen} />
 <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
 <Stack.Screen name="TeacherGroups" component={TeacherGroupsScreen} />
@@ -240,6 +247,7 @@ const AppNavigator = () => {
 <Stack.Screen name="UserManagement" component={withErrorBoundary(UserManagementScreen)} />
 <Stack.Screen name="AttendanceAnalytics" component={withErrorBoundary(AttendanceAnalyticsScreen)} />
 <Stack.Screen name="NoticeManager" component={withErrorBoundary(NoticeManagerScreen)} />
+<Stack.Screen name="GalleryManagement" component={withErrorBoundary(GalleryManagementScreen)} />
 <Stack.Screen name="ClassManager" component={withErrorBoundary(ClassManagerScreen)} />
 <Stack.Screen name="AdminSettings" component={withErrorBoundary(AdminSettingsScreen)} />
 <Stack.Screen name="PendingApproval" component={PendingApprovalScreen} />
@@ -282,6 +290,7 @@ const AppNavigator = () => {
 <Stack.Screen name="AttendanceReview" component={AttendanceReviewScreen} />
 <Stack.Screen name="StudentNotices" component={StudentNoticesScreen} />
 <Stack.Screen name="TeacherNotices" component={TeacherNoticesScreen} />
+<Stack.Screen name="NoticeDetails" component={NoticeDetailsScreen} />
 
 {/* New Screens */}
 <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />

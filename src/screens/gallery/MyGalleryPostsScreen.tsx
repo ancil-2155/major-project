@@ -45,7 +45,7 @@ const MyGalleryPostsScreen = ({ navigation }: any) => {
           const fetched = snapshot.docs.map(doc => ({
             ...(doc.data() as GalleryPost),
             postId: (doc.data() as GalleryPost).postId || doc.id,
-          }));
+          })).filter(post => post.status !== 'deleted');
           setPosts(fetched);
           setLoading(false);
         },

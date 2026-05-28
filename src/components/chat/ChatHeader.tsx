@@ -7,9 +7,10 @@ type ChatHeaderProps = {
   title: string;
   subtitle?: string;
   onBack: () => void;
+  onGroupInfo?: () => void;
 };
 
-const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, onBack }) => {
+const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, onBack, onGroupInfo }) => {
   const { colors, isDark } = useAppTheme();
 
   return (
@@ -31,6 +32,15 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, onBack }) => {
           </Text>
         ) : null}
       </View>
+      {onGroupInfo && (
+        <TouchableOpacity
+          onPress={onGroupInfo}
+          style={[styles.infoButton, { backgroundColor: isDark ? '#1F2937' : '#EEF2FF' }]}
+          activeOpacity={0.78}
+        >
+          <Icon name="information-circle" size={22} color={colors.primary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -62,6 +72,14 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  infoButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
   },
 });
 

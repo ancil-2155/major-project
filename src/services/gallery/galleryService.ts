@@ -1,6 +1,6 @@
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
-import { GalleryPost } from '../../types/gallery';
+import { GalleryComment, GalleryPost } from '../../types/gallery';
 import { removeUndefinedFields } from '../../utils/firestoreSanitizer';
 
 const GALLERY_COLLECTION = 'galleryPosts';
@@ -13,6 +13,10 @@ export const createGalleryPost = async (
     
     const newPost: GalleryPost = {
       ...postData,
+      userId: postData.userId || postData.uploaderId,
+      userName: postData.userName || postData.uploaderName || 'Unknown User',
+      role: postData.role || postData.uploaderRole || 'student',
+      category: postData.category || 'campus',
       uploaderName: postData.uploaderName || 'Unknown User',
       uploaderRole: postData.uploaderRole || 'student',
       uploaderPhotoUrl: postData.uploaderPhotoUrl || null,
@@ -135,6 +139,14 @@ export const checkUserLiked = async (postId: string, userId: string): Promise<bo
 };
 
 export const deleteOwnPost = async (postId: string, userId: string) => {
+  return deleteGalleryPost(postId, userId, false);
+};
+
+export const deleteGalleryPost = async (
+  postId: string,
+  userId: string,
+  isAdmin = false,
+) => {
   try {
     const postRef = firestore().collection(GALLERY_COLLECTION).doc(postId);
     const postDoc = await postRef.get();
@@ -142,7 +154,8 @@ export const deleteOwnPost = async (postId: string, userId: string) => {
     if (!postDoc.exists) throw new Error('Post not found');
     
     const postData = postDoc.data() as GalleryPost;
-    if (postData.uploaderId !== userId) {
+    const ownerId = postData.userId || postData.uploaderId;
+    if (!isAdmin && ownerId !== userId) {
       throw new Error('You can only delete your own posts');
     }
     
@@ -150,10 +163,93 @@ export const deleteOwnPost = async (postId: string, userId: string) => {
     await postRef.update({
       status: 'deleted',
       deletedAt: firestore.FieldValue.serverTimestamp(),
-      deletedBy: userId
+      deletedBy: userId,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   } catch (error) {
     console.error('Error deleting post:', error);
     throw error;
   }
+};
+
+export const addGalleryComment = async (
+  postId: string,
+  input: Omit<GalleryComment, 'commentId' | 'postId' | 'createdAt'>,
+): Promise<string> => {
+  const postRef = firestore().collection(GALLERY_COLLECTION).doc(postId);
+  const commentRef = postRef.collection('comments').doc();
+
+  await firestore().runTransaction(async transaction => {
+    const postDoc = await transaction.get(postRef);
+    if (!postDoc.exists) {
+      throw new Error('Post does not exist.');
+    }
+
+    transaction.set(
+      commentRef,
+      removeUndefinedFields({
+        ...input,
+        commentId: commentRef.id,
+        postId,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      }),
+    );
+
+    transaction.update(postRef, {
+      commentCount: firestore.FieldValue.increment(1),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return commentRef.id;
+};
+
+export const subscribeGalleryComments = (
+  postId: string,
+  onNext: (comments: GalleryComment[]) => void,
+  onError?: (error: Error) => void,
+) =>
+  firestore()
+    .collection(GALLERY_COLLECTION)
+    .doc(postId)
+    .collection('comments')
+    .orderBy('createdAt', 'asc')
+    .onSnapshot(
+      snapshot => {
+        onNext(
+          snapshot.docs.map(doc => ({
+            ...(doc.data() as GalleryComment),
+            commentId: (doc.data() as GalleryComment).commentId || doc.id,
+            postId,
+          })),
+        );
+      },
+      error => onError?.(error as Error),
+    );
+
+export const deleteGalleryComment = async (
+  postId: string,
+  comment: GalleryComment,
+  userId: string,
+  isAdmin = false,
+) => {
+  if (!isAdmin && comment.userId !== userId) {
+    throw new Error('You can only delete your own comments.');
+  }
+
+  const postRef = firestore().collection(GALLERY_COLLECTION).doc(postId);
+  const commentRef = postRef.collection('comments').doc(comment.commentId);
+
+  await firestore().runTransaction(async transaction => {
+    const commentDoc = await transaction.get(commentRef);
+    if (!commentDoc.exists) {
+      return;
+    }
+
+    transaction.delete(commentRef);
+    transaction.update(postRef, {
+      commentCount: firestore.FieldValue.increment(-1),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  });
 };

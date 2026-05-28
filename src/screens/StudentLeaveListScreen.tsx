@@ -25,7 +25,7 @@ const StudentLeaveListScreen = () => {
       .where('studentId', '==', user.uid)
       .onSnapshot(
         snapshot => {
-          const list = snapshot.docs.map(doc => ({
+          const list: any[] = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
           }));

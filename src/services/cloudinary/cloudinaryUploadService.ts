@@ -151,14 +151,18 @@ export const uploadMediaToCloudinary = async (
   fileUri: string,
   mediaType: 'image' | 'video',
   onProgress?: (progress: number) => void,
+  fileName?: string,
+  mimeType?: string,
+  sizeBytes?: number,
 ) => {
   const fallbackName = mediaType === 'image' ? 'gallery.jpg' : 'gallery.mp4';
   const fallbackType = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
   const result = await uploadLocalFileToCloudinary(
     {
       uri: fileUri,
-      name: fallbackName,
-      mimeType: fallbackType,
+      name: fileName || fallbackName,
+      mimeType: mimeType || fallbackType,
+      sizeBytes,
     },
     {
       preferredResourceType: mediaType,

@@ -7,25 +7,38 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
+  AlertButton,
   RefreshControl,
   Dimensions,
   Platform,
   StatusBar,
   Animated,
+  Modal,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
+import Share from 'react-native-share';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
-import { GalleryPost } from '../../types/gallery';
-import { likePost, unlikePost } from '../../services/gallery/galleryService';
+import { GalleryCategory, GalleryComment, GalleryPost } from '../../types/gallery';
+import {
+  addGalleryComment,
+  deleteGalleryComment,
+  deleteGalleryPost,
+  likePost,
+  subscribeGalleryComments,
+  unlikePost,
+} from '../../services/gallery/galleryService';
 import { useAppTheme } from '../../theme/appTheme';
 import ACAMSLogo from '../../components/common/ACAMSLogo';
 import AppBackButton from '../../components/common/AppBackButton';
 
 const { width } = Dimensions.get('window');
 
-const storyItems = [
+const CATEGORY_OPTIONS: { id: GalleryCategory; label: string; color: string }[] = [
   { id: 'campus', label: 'Campus', color: '#EC4899' },
   { id: 'events', label: 'Events', color: '#8B5CF6' },
   { id: 'classes', label: 'Classes', color: '#06B6D4' },
@@ -41,8 +54,15 @@ const EventGalleryScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState<'student' | 'teacher' | 'admin' | 'parent'>('student');
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [userLikes, setUserLikes] = useState<Record<string, boolean>>({});
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<GalleryCategory>('campus');
+  const [commentsPost, setCommentsPost] = useState<GalleryPost | null>(null);
+  const [comments, setComments] = useState<GalleryComment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [commentsLoading, setCommentsLoading] = useState(false);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 78 }).current;
 
@@ -55,7 +75,10 @@ const EventGalleryScreen = ({ navigation }: any) => {
         .doc(user.uid)
         .get()
         .then(doc => {
-          setCurrentUserName(doc.data()?.name || 'ACAMS User');
+          const data = doc.data();
+          setCurrentUserName(data?.name || 'ACAMS User');
+          setCurrentUserRole(data?.role || 'student');
+          setCurrentUserPhotoUrl(data?.profilePhoto || data?.profilePhotoUrl || null);
         });
     }
 
@@ -160,26 +183,72 @@ const EventGalleryScreen = ({ navigation }: any) => {
     });
   };
 
-  const renderStories = () => (
-    <View style={styles.storiesWrap}>
-      {storyItems.map(item => (
-        <View key={item.id} style={styles.storyItem}>
-          <View style={[styles.storyRing, { borderColor: item.color }]}>
-            <Text style={[styles.storyInitial, { color: item.color }]}>
-              {item.label.charAt(0)}
-            </Text>
-          </View>
-          <Text style={styles.storyLabel} numberOfLines={1}>
-            {item.label}
-          </Text>
-        </View>
-      ))}
-    </View>
+  useEffect(() => {
+    if (!commentsPost) {
+      setComments([]);
+      setCommentText('');
+      return undefined;
+    }
+
+    setCommentsLoading(true);
+    const unsubscribe = subscribeGalleryComments(
+      commentsPost.postId,
+      nextComments => {
+        setComments(nextComments);
+        setCommentsLoading(false);
+      },
+      error => {
+        console.error('Comments error:', error);
+        setCommentsLoading(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [commentsPost]);
+
+  const visiblePosts = useMemo(
+    () => posts.filter(post => (post.category || 'campus') === selectedCategory),
+    [posts, selectedCategory],
+  );
+
+  const renderCategoryPills = () => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.categoryPillsWrap}>
+      {CATEGORY_OPTIONS.map(item => {
+        const active = selectedCategory === item.id;
+        return (
+          <TouchableOpacity
+            key={item.id}
+            onPress={() => setSelectedCategory(item.id)}
+            activeOpacity={0.78}>
+            <Animated.View
+              style={[
+                styles.categoryPill,
+                active && {
+                  backgroundColor: item.color,
+                  borderColor: item.color,
+                  transform: [{ scale: 1.04 }],
+                },
+              ]}>
+              <Text
+                style={[
+                  styles.categoryPillText,
+                  active && styles.categoryPillTextActive,
+                ]}>
+                {item.label}
+              </Text>
+            </Animated.View>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
   );
 
   const renderListHeader = () => (
     <View>
-      {renderStories()}
+      {renderCategoryPills()}
       <View style={styles.feedIntro}>
         <Text style={styles.feedTitle}>Latest moments</Text>
         <Text style={styles.feedSubtitle}>
@@ -188,6 +257,97 @@ const EventGalleryScreen = ({ navigation }: any) => {
       </View>
     </View>
   );
+
+  const handleShare = async (post: GalleryPost) => {
+    try {
+      await Share.open({
+        title: post.heading || 'ACAMS Gallery',
+        message: `${post.heading || 'ACAMS Gallery'}${post.caption ? `\n\n${post.caption}` : ''}\n\n${post.mediaUrl}`,
+        url: post.mediaUrl,
+        failOnCancel: false,
+      });
+    } catch (error: any) {
+      if (!String(error?.message || '').toLowerCase().includes('cancel')) {
+        Alert.alert('Share Failed', 'Could not open sharing options.');
+      }
+    }
+  };
+
+  const handlePostMenu = (post: GalleryPost) => {
+    const ownerId = post.userId || post.uploaderId;
+    const canDelete = currentUserRole === 'admin' || ownerId === currentUserId;
+    const actions: AlertButton[] = [
+      { text: 'Cancel', style: 'cancel' as const },
+      { text: 'Share', onPress: () => handleShare(post) },
+    ];
+
+    if (canDelete && currentUserId) {
+      actions.push({
+        text: currentUserRole === 'admin' && ownerId !== currentUserId ? 'Delete as Admin' : 'Delete Post',
+        style: 'destructive' as const,
+        onPress: async () => {
+          try {
+            await deleteGalleryPost(post.postId, currentUserId, currentUserRole === 'admin');
+          } catch (error: any) {
+            Alert.alert('Delete Failed', error.message || 'Could not delete this post.');
+          }
+        },
+      });
+    }
+
+    Alert.alert('Post Options', post.heading || 'Gallery post', actions);
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (!commentsPost || !currentUserId || !text) {
+      return;
+    }
+
+    setCommentText('');
+    try {
+      await addGalleryComment(commentsPost.postId, {
+        userId: currentUserId,
+        userName: currentUserName || 'ACAMS User',
+        userRole: currentUserRole,
+        userPhotoUrl: currentUserPhotoUrl,
+        text,
+      });
+    } catch (error: any) {
+      setCommentText(text);
+      Alert.alert('Comment Failed', error.message || 'Could not add comment.');
+    }
+  };
+
+  const handleDeleteComment = (comment: GalleryComment) => {
+    if (!currentUserId) {
+      return;
+    }
+    const canDelete = currentUserRole === 'admin' || comment.userId === currentUserId;
+    if (!canDelete || !commentsPost) {
+      return;
+    }
+
+    Alert.alert('Delete Comment', 'Delete this comment?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteGalleryComment(
+              commentsPost.postId,
+              comment,
+              currentUserId,
+              currentUserRole === 'admin',
+            );
+          } catch (error: any) {
+            Alert.alert('Delete Failed', error.message || 'Could not delete comment.');
+          }
+        },
+      },
+    ]);
+  };
 
   const PostCard = ({ item }: { item: GalleryPost }) => {
     const isLiked = Boolean(userLikes[item.postId]);
@@ -251,7 +411,12 @@ const EventGalleryScreen = ({ navigation }: any) => {
             <Text style={styles.dateText}>{formatDate(item)}</Text>
           </View>
 
-          <Icon name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
+          <TouchableOpacity
+            onPress={() => handlePostMenu(item)}
+            style={styles.moreButton}
+            activeOpacity={0.7}>
+            <Icon name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity 
@@ -315,20 +480,26 @@ const EventGalleryScreen = ({ navigation }: any) => {
                 color={isLiked ? '#EF4444' : colors.text}
               />
             </TouchableOpacity>
-            <View style={styles.actionButton}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setCommentsPost(item)}
+              activeOpacity={0.7}>
               <Icon
                 name="chatbubble-outline"
                 size={25}
                 color={colors.text}
               />
-            </View>
-            <View style={styles.actionButton}>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleShare(item)}
+              activeOpacity={0.7}>
               <Icon
                 name="paper-plane-outline"
                 size={25}
                 color={colors.text}
               />
-            </View>
+            </TouchableOpacity>
           </View>
           <View style={styles.actionButton}>
             <Icon name="bookmark-outline" size={25} color={colors.text} />
@@ -344,7 +515,7 @@ const EventGalleryScreen = ({ navigation }: any) => {
             {item.caption ? ` ${item.caption}` : ''}
           </Text>
           {item.commentCount ? (
-            <Text style={styles.commentText}>
+            <Text style={styles.commentText} onPress={() => setCommentsPost(item)}>
               View {item.commentCount} comments
             </Text>
           ) : null}
@@ -396,12 +567,17 @@ const EventGalleryScreen = ({ navigation }: any) => {
       </View>
 
       <FlatList
-        data={posts}
+        data={visiblePosts}
         keyExtractor={item => item.postId}
         renderItem={({ item }) => <PostCard item={item} />}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={renderListHeader}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={80}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -417,7 +593,7 @@ const EventGalleryScreen = ({ navigation }: any) => {
             </View>
             <Text style={styles.emptyText}>No gallery posts yet</Text>
             <Text style={styles.emptySubtext}>
-              Approved event photos and videos will appear here.
+              Approved {selectedCategory} photos and videos will appear here.
             </Text>
           </View>
         }
@@ -429,6 +605,110 @@ const EventGalleryScreen = ({ navigation }: any) => {
         }}
         viewabilityConfig={viewabilityConfig}
       />
+
+      <Modal
+        visible={Boolean(commentsPost)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCommentsPost(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.commentsSheet}>
+            <View style={styles.commentsHeader}>
+              <Text style={styles.commentsTitle}>Comments</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setCommentsPost(null)}
+                activeOpacity={0.7}>
+                <Icon name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {commentsLoading ? (
+              <ActivityIndicator color={colors.primary} style={styles.commentsLoader} />
+            ) : (
+              <FlatList
+                data={comments}
+                keyExtractor={item => item.commentId}
+                style={styles.commentsList}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <View style={styles.emptyComments}>
+                    <Text style={styles.emptyText}>No comments yet</Text>
+                    <Text style={styles.emptySubtext}>Start the conversation.</Text>
+                  </View>
+                }
+                renderItem={({ item }) => {
+                  const canDelete =
+                    currentUserRole === 'admin' || item.userId === currentUserId;
+                  const date = item.createdAt?.toDate
+                    ? item.createdAt.toDate().toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+                    : 'Now';
+
+                  return (
+                    <TouchableOpacity
+                      style={styles.commentRow}
+                      activeOpacity={canDelete ? 0.72 : 1}
+                      onLongPress={() => handleDeleteComment(item)}>
+                      {item.userPhotoUrl ? (
+                        <Image source={{ uri: item.userPhotoUrl }} style={styles.commentAvatar} />
+                      ) : (
+                        <View style={styles.commentAvatarFallback}>
+                          <Text style={styles.commentAvatarText}>
+                            {(item.userName || 'A').charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.commentBody}>
+                        <View style={styles.commentMetaRow}>
+                          <Text style={styles.commentName} numberOfLines={1}>
+                            {item.userName || 'ACAMS User'}
+                          </Text>
+                          <Text style={styles.commentDate}>{date}</Text>
+                        </View>
+                        <Text style={styles.commentMessage}>{item.text}</Text>
+                      </View>
+                      {canDelete ? (
+                        <TouchableOpacity
+                          onPress={() => handleDeleteComment(item)}
+                          style={styles.commentDeleteButton}>
+                          <Icon name="trash-outline" size={18} color={colors.danger} />
+                        </TouchableOpacity>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Add a comment..."
+                placeholderTextColor={colors.muted}
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+                maxLength={300}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.commentSendButton,
+                  !commentText.trim() && styles.commentSendButtonDisabled,
+                ]}
+                onPress={submitComment}
+                disabled={!commentText.trim()}
+                activeOpacity={0.76}>
+                <Icon name="send" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -488,37 +768,32 @@ const createStyles = (colors: any, isDark: boolean) => {
     listContent: {
       paddingBottom: 34,
     },
-    storiesWrap: {
+    categoryPillsWrap: {
       paddingVertical: 14,
       paddingHorizontal: 12,
       flexDirection: 'row',
-      gap: 14,
+      gap: 8,
       backgroundColor: colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    storyItem: {
-      width: 58,
-      alignItems: 'center',
-    },
-    storyRing: {
-      width: 54,
-      height: 54,
-      borderRadius: 27,
-      borderWidth: 2,
+    categoryPill: {
+      minHeight: 38,
+      paddingHorizontal: 14,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
       backgroundColor: colors.card,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    storyInitial: {
-      fontSize: 18,
-      fontWeight: '900',
-    },
-    storyLabel: {
-      marginTop: 6,
+    categoryPillText: {
       color: colors.textSecondary,
-      fontSize: 11,
-      fontWeight: '700',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    categoryPillTextActive: {
+      color: '#FFFFFF',
     },
     feedIntro: {
       paddingHorizontal: 14,
@@ -607,6 +882,12 @@ const createStyles = (colors: any, isDark: boolean) => {
       fontSize: 11,
       marginTop: 3,
       fontWeight: '600',
+    },
+    moreButton: {
+      width: 38,
+      height: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     mediaFrame: {
       width: mediaWidth,
@@ -713,6 +994,145 @@ const createStyles = (colors: any, isDark: boolean) => {
       textAlign: 'center',
       lineHeight: 19,
       marginTop: 6,
+    },
+    modalBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: colors.overlay,
+    },
+    commentsSheet: {
+      maxHeight: '82%',
+      minHeight: '48%',
+      backgroundColor: colors.modal,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    commentsHeader: {
+      minHeight: 58,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    commentsTitle: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '900',
+    },
+    closeButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.chip,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    commentsLoader: {
+      marginVertical: 30,
+    },
+    commentsList: {
+      flexGrow: 0,
+    },
+    emptyComments: {
+      paddingVertical: 48,
+      paddingHorizontal: 28,
+      alignItems: 'center',
+    },
+    commentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 10,
+    },
+    commentAvatar: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.cardAlt,
+    },
+    commentAvatarFallback: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.primarySoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    commentAvatarText: {
+      color: colors.primary,
+      fontWeight: '900',
+      fontSize: 14,
+    },
+    commentBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    commentMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    commentName: {
+      flexShrink: 1,
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '900',
+    },
+    commentDate: {
+      color: colors.muted,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    commentMessage: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 3,
+    },
+    commentDeleteButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    commentInputRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 10,
+      padding: 12,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    commentInput: {
+      flex: 1,
+      maxHeight: 92,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+      backgroundColor: colors.input,
+      color: colors.text,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 14,
+    },
+    commentSendButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    commentSendButtonDisabled: {
+      opacity: 0.45,
     },
   });
 };

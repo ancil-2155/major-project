@@ -71,8 +71,8 @@ export const displayLocalNotification = async (title: string, body: string, data
 export const setupForegroundHandler = () => {
   return messaging().onMessage(async (remoteMessage) => {
     console.log('FCM Message arrived in foreground:', remoteMessage);
-    const title = remoteMessage.notification?.title || remoteMessage.data?.title || 'New Notification';
-    const body = remoteMessage.notification?.body || remoteMessage.data?.body || '';
+    const title = String(remoteMessage.notification?.title || remoteMessage.data?.title || 'New Notification');
+    const body = String(remoteMessage.notification?.body || remoteMessage.data?.body || '');
     
     await displayLocalNotification(title, body, remoteMessage.data);
   });

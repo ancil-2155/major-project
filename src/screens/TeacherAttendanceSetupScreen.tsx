@@ -15,6 +15,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { loadEnrolledStudentsForAttendance } from '../services/attendance/classEmbeddingService';
+import { createAttendanceSession } from '../services/attendance/attendanceSessionService';
 import { AttendanceClassConfig, EducationLevel, ClassLoadResult, SubjectOption } from '../types/academic';
 import {
   getEducationLevels,
@@ -152,20 +153,31 @@ const TeacherAttendanceSetupScreen = ({ navigation }: any) => {
       section: '', // Removed from config
     };
 
+    const classConfig = {
+      educationLevel,
+      departmentCode: departmentCode || null,
+      department: departmentName || null,
+      classLevel: classLevel || null,
+      className: className || null,
+      yearNumber: yearNumber || null,
+      semesterNumber: semesterNumber || null,
+      subject,
+    };
+
+    const sessionId = await createAttendanceSession(
+      currentUser?.uid || 'unknown',
+      teacherName,
+      filter,
+      loadResult.students.length,
+      classConfig
+    );
+
     navigation.replace('TeacherLiveAttendance', {
+      sessionId,
       filter,
       students: loadResult.students,
       validEmbeddings: loadResult.validEmbeddings,
-      classConfig: {
-        educationLevel,
-        departmentCode: departmentCode || null,
-        department: departmentName || null,
-        classLevel: classLevel || null,
-        className: className || null,
-        yearNumber: yearNumber || null,
-        semesterNumber: semesterNumber || null,
-        subject,
-      },
+      classConfig,
       teacherId: currentUser?.uid || 'unknown',
       teacherName,
     });

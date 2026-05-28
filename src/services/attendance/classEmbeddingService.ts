@@ -137,7 +137,7 @@ const loadEmbeddingForStudent = async (
       ...student,
       reason:
         validation.reason === 'Embedding not linked to student'
-          ? 'Embedding not linked to student'
+          ? 'Please re-enroll face'
           : validation.reason || 'Invalid embedding',
     };
   }
@@ -163,7 +163,10 @@ const loadEmbeddingForStudent = async (
 
     return {
       ...student,
-      reason: validation.reason || 'Invalid embedding',
+      reason:
+        validation.reason === 'Embedding not linked to student'
+          ? 'Please re-enroll face'
+          : validation.reason || 'Invalid embedding',
     };
   }
 

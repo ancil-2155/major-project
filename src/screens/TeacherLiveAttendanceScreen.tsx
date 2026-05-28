@@ -53,6 +53,7 @@ const getFaceArea = (face: any) => {
 
 const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
   const {
+    sessionId,
     filter,
     students = [],
     validEmbeddings = [],
@@ -60,6 +61,7 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
     teacherId,
     teacherName,
   } = route.params as {
+    sessionId: string;
     filter: { department: string; year: string; semester: string; subject: string; section?: string };
     students: StudentProfile[];
     validEmbeddings: StudentFaceEmbedding[];
@@ -318,6 +320,7 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
 
   const navigateToReview = () => {
     navigation.navigate('AttendanceReview', {
+      sessionId,
       filter,
       classConfig,
       students,
@@ -343,7 +346,7 @@ const TeacherLiveAttendanceScreen = ({ route, navigation }: any) => {
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={canScan}
+        isActive={true}
         onFacesDetected={processFaces}
         onError={(error: any) => {
           console.error('Camera stream error:', error);

@@ -2,7 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import * as RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import * as XLSX from 'xlsx';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import { generatePDF } from 'react-native-html-to-pdf';
 import RNPrint from 'react-native-print';
 import { Platform } from 'react-native';
 
@@ -190,17 +190,13 @@ export const exportAttendanceToPDF = async (sessionId: string) => {
   
   const fileName = getFileNamePrefix(sessionData);
 
-  if (!RNHTMLtoPDF?.convert) {
-    throw new Error('PDF export is temporarily unavailable');
-  }
-  
   const options = {
     html,
     fileName,
     directory: 'Documents',
   };
   
-  const file = await RNHTMLtoPDF.convert(options);
+  const file = await generatePDF(options);
   return assertFileExists(file?.filePath);
 };
 

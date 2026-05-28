@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
@@ -56,7 +57,7 @@ const UploadLibraryResourceScreen = ({ navigation }: any) => {
       setSubject('');
       try {
         const subjects = await loadSubjectsFromFirestoreOrDefault({
-          educationLevel,
+          educationLevel: educationLevel as any,
           departmentCode: departmentCode || undefined,
           classLevel: classLevel || undefined,
           yearNumber: yearNumber || undefined,

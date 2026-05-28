@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,14 +12,18 @@ import {
   Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import auth from '@react-native-firebase/auth';
 import { fetchDashboardStats, DashboardStats } from '../../services/admin/attendanceAnalyticsService';
 import { logAdminAction } from '../../services/admin/auditLogService';
+import { useAppTheme } from '../../theme/appTheme';
 
 const { width } = Dimensions.get('window');
 
 const AdminHomeScreen = ({ navigation }: any) => {
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -72,9 +76,9 @@ const AdminHomeScreen = ({ navigation }: any) => {
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
+      <StatusBar barStyle="light-content" backgroundColor={colors.headerStart} />
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <LinearGradient colors={['#1E3A8A', '#312E81']} style={styles.header}>
+        <LinearGradient colors={[colors.headerStart, colors.headerEnd]} style={styles.header}>
           <View style={styles.headerTop}>
             <Text style={styles.title}>Admin Panel</Text>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
@@ -88,7 +92,7 @@ const AdminHomeScreen = ({ navigation }: any) => {
           {/* STATS OVERVIEW */}
           <Text style={styles.sectionTitle}>Overview</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#1E3A8A" style={{ marginVertical: 20 }} />
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 20 }} />
           ) : (
             stats && (
               <View style={styles.statsContainer}>
@@ -101,7 +105,7 @@ const AdminHomeScreen = ({ navigation }: any) => {
                   <Text style={styles.statLabel}>Teachers</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={[styles.statNum, { color: '#F59E0B' }]}>{stats.pendingTeachers}</Text>
+                  <Text style={[styles.statNum, { color: colors.warning }]}>{stats.pendingTeachers}</Text>
                   <Text style={styles.statLabel}>Pending</Text>
                 </View>
               </View>
@@ -112,12 +116,13 @@ const AdminHomeScreen = ({ navigation }: any) => {
           <Text style={styles.sectionTitle}>Management</Text>
           <View style={styles.grid}>
             {[
-              { icon: '👩‍🏫', label: 'Approvals', screen: 'TeacherApprovals', desc: 'Approve new teachers' },
-              { icon: '👥', label: 'Users', screen: 'UserManagement', desc: 'Manage all accounts' },
-              { icon: '📊', label: 'Attendance', screen: 'AttendanceAnalytics', desc: 'View daily reports' },
-              { icon: '📢', label: 'Notices', screen: 'NoticeManager', desc: 'Send announcements' },
-              { icon: '🏫', label: 'Classes', screen: 'ClassManager', desc: 'Manage subjects & depts' },
-              { icon: '⚙️', label: 'Settings', screen: 'AdminSettings', desc: 'App configuration' },
+              { icon: 'shield-checkmark-outline', label: 'Approvals', screen: 'TeacherApprovals', desc: 'Approve new teachers' },
+              { icon: 'people-outline', label: 'Users', screen: 'UserManagement', desc: 'Manage all accounts' },
+              { icon: 'bar-chart-outline', label: 'Attendance', screen: 'AttendanceAnalytics', desc: 'View daily reports' },
+              { icon: 'megaphone-outline', label: 'Notices', screen: 'NoticeManager', desc: 'Send announcements' },
+              { icon: 'images-outline', label: 'Gallery', screen: 'GalleryManagement', desc: 'Moderate gallery posts' },
+              { icon: 'school-outline', label: 'Classes', screen: 'ClassManager', desc: 'Manage subjects and depts' },
+              { icon: 'settings-outline', label: 'Settings', screen: 'AdminSettings', desc: 'App configuration' },
             ].map((item, index) => (
               <TouchableOpacity
                 key={index}
@@ -125,7 +130,9 @@ const AdminHomeScreen = ({ navigation }: any) => {
                 onPress={() => navigation.navigate(item.screen)}
                 activeOpacity={0.8}
               >
-                <Text style={styles.gridIcon}>{item.icon}</Text>
+                <View style={styles.gridIconWrap}>
+                  <Icon name={item.icon} size={24} color={colors.primary} />
+                </View>
                 <Text style={styles.gridTitle}>{item.label}</Text>
                 <Text style={styles.gridDesc}>{item.desc}</Text>
               </TouchableOpacity>
@@ -140,10 +147,10 @@ const AdminHomeScreen = ({ navigation }: any) => {
 
 export default AdminHomeScreen;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
   },
   header: {
     paddingTop: 50,
@@ -184,36 +191,36 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.text,
     marginBottom: 12,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 24,
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: isDark ? 0.22 : 0.1,
     shadowRadius: 4,
   },
   statBox: {
     flex: 1,
     alignItems: 'center',
     borderRightWidth: 1,
-    borderRightColor: '#F3F4F6',
+    borderRightColor: colors.border,
   },
   statNum: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1E3A8A',
+    color: colors.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   grid: {
@@ -223,28 +230,33 @@ const styles = StyleSheet.create({
   },
   gridCard: {
     width: (width - 60) / 2,
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
     padding: 16,
     borderRadius: 16,
     marginBottom: 16,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: isDark ? 0.18 : 0.05,
     shadowRadius: 4,
   },
-  gridIcon: {
-    fontSize: 28,
+  gridIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
     marginBottom: 8,
   },
   gridTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: colors.text,
     marginBottom: 4,
   },
   gridDesc: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
 });

@@ -119,7 +119,12 @@ export const subscribeActiveNoticesForUser = (
         await Promise.all(
           activeNotices.map(async (n) => {
             try {
-              const readDoc = await doc.ref.collection('reads').doc(userId).get();
+              const readDoc = await firestore()
+                .collection(NOTICES_COL)
+                .doc(n.noticeId)
+                .collection('reads')
+                .doc(userId)
+                .get();
               if (!readDoc.exists) unreadCount++;
             } catch {
               // ignore

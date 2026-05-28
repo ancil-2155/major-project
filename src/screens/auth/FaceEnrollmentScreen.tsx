@@ -30,6 +30,12 @@ const STEP_INSTRUCTIONS: Record<FaceCaptureStep, string> = {
   done: 'All captured! Press Finish to register.',
 };
 
+const toNumberOrNull = (value: any): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const FaceEnrollmentScreen = ({ route, navigation }: any) => {
   const { userData } = route.params;
 
@@ -198,6 +204,13 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         }
       }
 
+      const existingUserDoc = await firestore()
+        .collection('users')
+        .doc(firebaseUser.uid)
+        .get();
+      const hasExistingFaceEmbedding =
+        existingUserDoc.exists && existingUserDoc.data()?.faceEmbeddingDocId === firebaseUser.uid;
+
       // 2. Upload profile photo (with fallback to local file)
       let photoUrl = '';
       let photoPath = '';
@@ -222,8 +235,12 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         rightEmbedding,
       ]);
 
+      if (finalEmbedding.length !== 128) {
+        throw new Error(`Invalid face embedding length: ${finalEmbedding.length}`);
+      }
+
       // 4. Save face data to Firestore (NEW REQUIRED STRUCTURE)
-      const faceData = {
+      const faceData: any = {
         studentId: firebaseUser.uid,
         studentName: userData.name || '',
         studentEmail: userData.email || null,
@@ -231,8 +248,8 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         educationLevel: userData.educationLevel || 'btech',
         departmentCode: userData.departmentCode || userData.department || null,
         department: userData.department || userData.departmentCode || null,
-        yearNumber: userData.yearNumber || null,
-        semesterNumber: userData.semesterNumber || null,
+        yearNumber: toNumberOrNull(userData.yearNumber || userData.year),
+        semesterNumber: toNumberOrNull(userData.semesterNumber || userData.semester),
         classLevel: userData.classLevel || userData.className || null,
         
         embedding: finalEmbedding,
@@ -245,8 +262,10 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         embeddingSize: 128,
         qualityScore: 0.95,
         profilePhotoUrl: photoUrl || null,
-        createdAt: firestore.FieldValue.serverTimestamp(),
       };
+      if (!hasExistingFaceEmbedding) {
+        faceData.createdAt = firestore.FieldValue.serverTimestamp();
+      }
       await saveFaceEmbeddings(firebaseUser.uid, faceData);
 
       // 5. Save user profile (NEW REQUIRED STRUCTURE)
@@ -258,9 +277,9 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         department: userData.department,
         departmentCode: userData.departmentCode || userData.department || '',
         year: userData.year,
-        yearNumber: userData.yearNumber || null,
+        yearNumber: toNumberOrNull(userData.yearNumber || userData.year),
         semester: userData.semester || '',
-        semesterNumber: userData.semesterNumber || null,
+        semesterNumber: toNumberOrNull(userData.semesterNumber || userData.semester),
         section: userData.section || '',
         rollNo: userData.rollNo || '',
         educationLevel: userData.educationLevel || 'btech',
@@ -324,6 +343,7 @@ const FaceEnrollmentScreen = ({ route, navigation }: any) => {
         device={device}
         isActive={step !== 'done'}
         onFacesDetected={handleFacesDetected}
+        onError={error => console.error('Face enrollment camera error:', error)}
         performanceMode="fast"
         resizeMode="cover"
       />

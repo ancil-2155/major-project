@@ -21,10 +21,40 @@ import auth from '@react-native-firebase/auth';
 import { uploadMediaToCloudinary } from '../../services/cloudinary/cloudinaryUploadService';
 import { createGalleryPost } from '../../services/gallery/galleryService';
 import { useAppTheme } from '../../theme/appTheme';
+import { GalleryCategory } from '../../types/gallery';
 
 const MAX_VIDEO_DURATION = 60;
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 150 * 1024 * 1024;
+const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const SUPPORTED_VIDEO_MIME_TYPES = ['video/mp4', 'video/quicktime'];
+const CATEGORY_OPTIONS: { id: GalleryCategory; label: string }[] = [
+  { id: 'campus', label: 'Campus' },
+  { id: 'events', label: 'Events' },
+  { id: 'classes', label: 'Classes' },
+  { id: 'sports', label: 'Sports' },
+  { id: 'arts', label: 'Arts' },
+];
+
+const getAssetExtension = (fileName?: string) =>
+  fileName?.split('.').pop()?.toLowerCase() || '';
+
+const isSupportedAsset = (asset: any) => {
+  const mimeType = String(asset.type || '').toLowerCase();
+  const extension = getAssetExtension(asset.fileName);
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  const videoExtensions = ['mp4', 'mov'];
+
+  if (SUPPORTED_IMAGE_MIME_TYPES.includes(mimeType) || imageExtensions.includes(extension)) {
+    return { supported: true, mediaType: 'image' as const };
+  }
+
+  if (SUPPORTED_VIDEO_MIME_TYPES.includes(mimeType) || videoExtensions.includes(extension)) {
+    return { supported: true, mediaType: 'video' as const };
+  }
+
+  return { supported: false, mediaType: null };
+};
 
 const CreateGalleryPostScreen = ({ navigation }: any) => {
   const { colors, isDark } = useAppTheme();
@@ -32,6 +62,7 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
   const [media, setMedia] = useState<any>(null);
   const [heading, setHeading] = useState('');
   const [caption, setCaption] = useState('');
+  const [category, setCategory] = useState<GalleryCategory>('campus');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -56,7 +87,16 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
           return;
         }
 
-        if (asset.type?.includes('video')) {
+        const support = isSupportedAsset(asset);
+        if (!support.supported) {
+          Alert.alert(
+            'Unsupported File',
+            'Please select JPG, JPEG, PNG, WEBP, GIF, MP4, or MOV media.',
+          );
+          return;
+        }
+
+        if (support.mediaType === 'video') {
           if (asset.duration && asset.duration > MAX_VIDEO_DURATION) {
             Alert.alert('Error', 'Video must be 60 seconds or less.');
             return;
@@ -91,19 +131,30 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
       const userDoc = await firestore().collection('users').doc(user.uid).get();
       const userData = userDoc.data();
       const role = userData?.role || 'student';
-      const isTeacherOrAdmin = role === 'teacher' || role === 'admin';
-      const mediaType = media.type?.includes('video') ? 'video' : 'image';
+      const support = isSupportedAsset(media);
+      if (!support.supported || !support.mediaType) {
+        throw new Error('Unsupported media type.');
+      }
+      const mediaType = support.mediaType;
 
       const response = await uploadMediaToCloudinary(
         media.uri,
         mediaType,
         setProgress,
+        media.fileName,
+        media.type,
+        media.fileSize,
       );
+
+      const cloudinaryResourceType =
+        response.resource_type === 'video' || response.resource_type === 'image'
+          ? response.resource_type
+          : mediaType;
 
       const cloudinaryData = {
         secureUrl: response.secure_url || (response as any).url || null,
         publicId: response.public_id || null,
-        resourceType: response.resource_type || mediaType,
+        resourceType: cloudinaryResourceType,
         format: response.format || null,
         width: response.width ?? null,
         height: response.height ?? null,
@@ -116,10 +167,14 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
       }
 
       await createGalleryPost({
+        userId: user.uid,
+        userName: userData?.name || 'Unknown',
+        role,
         uploaderId: user.uid,
         uploaderName: userData?.name || 'Unknown',
         uploaderRole: role,
         uploaderPhotoUrl: userData?.profilePhoto || null,
+        category,
         heading: heading.trim(),
         caption: caption.trim(),
         mediaType,
@@ -155,7 +210,7 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
     }
   };
 
-  const isVideo = media?.type?.includes('video');
+  const isVideo = media ? isSupportedAsset(media).mediaType === 'video' : false;
 
   return (
     <KeyboardAvoidingView
@@ -258,6 +313,28 @@ const CreateGalleryPostScreen = ({ navigation }: any) => {
             numberOfLines={4}
             maxLength={500}
           />
+
+          <Text style={styles.inputLabel}>Category</Text>
+          <View style={styles.categoryRow}>
+            {CATEGORY_OPTIONS.map(item => {
+              const active = category === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.categoryPill, active && styles.categoryPillActive]}
+                  onPress={() => setCategory(item.id)}
+                  activeOpacity={0.72}>
+                  <Text
+                    style={[
+                      styles.categoryPillText,
+                      active && styles.categoryPillTextActive,
+                    ]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -440,6 +517,30 @@ const createStyles = (colors: any, isDark: boolean) =>
     textArea: {
       minHeight: 116,
       textAlignVertical: 'top',
-      marginBottom: 0,
+    },
+    categoryRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    categoryPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.chip,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    categoryPillActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    categoryPillText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    categoryPillTextActive: {
+      color: '#FFFFFF',
     },
   });

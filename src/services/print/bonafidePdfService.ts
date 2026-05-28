@@ -1,5 +1,5 @@
 import RNPrint from 'react-native-print';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import { generatePDF } from 'react-native-html-to-pdf';
 
 export interface CertificateData {
   studentName: string;
@@ -184,7 +184,7 @@ export const generateBonafidePDF = async (data: CertificateData): Promise<string
       directory: 'Documents',
     };
     
-    const file = await RNHTMLtoPDF.convert(options);
+    const file = await generatePDF(options);
     return file.filePath || '';
   } catch (error) {
     console.error('PDF Generation Error:', error);

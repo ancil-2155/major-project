@@ -9,7 +9,7 @@ import {
 } from '@react-native-firebase/messaging';
 import { getApp } from '@react-native-firebase/app';
 import { getAuth } from '@react-native-firebase/auth';
-import { getFirestore } from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { Alert } from 'react-native';
 
 class NotificationService {
@@ -51,7 +51,7 @@ class NotificationService {
       const userId = getAuth(app).currentUser?.uid;
       if (!userId) return;
 
-      await getFirestore(app).collection('users').doc(userId).update({
+      await firestore().collection('users').doc(userId).update({
         fcmToken: token,
       });
       console.log('FCM token saved to Firestore successfully.');

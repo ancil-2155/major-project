@@ -52,7 +52,10 @@ const TeacherNoticesScreen = ({ navigation }: any) => {
     return (
       <TouchableOpacity 
         style={[styles.card, item.priority === 'urgent' && { borderLeftColor: '#DC2626' }]} 
-        onPress={() => handleRead(item.noticeId)}
+        onPress={() => {
+          handleRead(item.noticeId);
+          navigation.navigate('NoticeDetails', { noticeId: item.noticeId });
+        }}
         activeOpacity={0.8}
       >
         <View style={styles.cardHeader}>

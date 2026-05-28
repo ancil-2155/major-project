@@ -28,10 +28,10 @@ let diagnostics: FaceModelDiagnostics = {
 export const loadFaceNetModel = async () => {
   if (faceModel) return faceModel;
   try {
-    faceModel =
-      Platform.OS === 'ios'
-        ? await loadTensorflowModel(MODEL_ASSET, 'core-ml')
-        : await loadTensorflowModel(MODEL_ASSET);
+    faceModel = await loadTensorflowModel(
+      MODEL_ASSET,
+      Platform.OS === 'ios' ? ['core-ml'] : [],
+    );
 
     diagnostics = {
       modelLoaded: true,

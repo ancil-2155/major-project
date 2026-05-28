@@ -316,7 +316,12 @@ const GroupChatScreen = ({ route, navigation }: any) => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <ChatHeader title={groupName} subtitle={groupSubtitle} onBack={() => navigation.goBack()} />
+        <ChatHeader 
+          title={groupName} 
+          subtitle={groupSubtitle} 
+          onBack={() => navigation.goBack()}
+          onGroupInfo={() => navigation.navigate('GroupInfo', { groupId })}
+        />
 
         {error ? (
           <View style={[styles.errorWrap, { backgroundColor: colors.cardAlt, borderColor: colors.border }]}>

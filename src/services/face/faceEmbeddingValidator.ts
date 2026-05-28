@@ -88,6 +88,16 @@ export const validateFaceEmbeddingDoc = async (
     };
   }
 
+  if (!embedding.every(value => typeof value === 'number' && Number.isFinite(value))) {
+    return {
+      valid: false,
+      reason: 'Invalid embedding values',
+      studentId,
+      embedding: null,
+      data,
+    };
+  }
+
   const expectedSize = Number(data.embeddingSize || EXPECTED_FACE_EMBEDDING_SIZE);
   if (embedding.length !== EXPECTED_FACE_EMBEDDING_SIZE && embedding.length !== expectedSize) {
     return {

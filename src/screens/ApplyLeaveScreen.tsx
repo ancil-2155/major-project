@@ -16,6 +16,7 @@ import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { getApprovedTeachersForStudent, TeacherOption } from '../services/student/teacherSelectionService';
 import AppBackButton from '../components/common/AppBackButton';
+import { useAppTheme } from '../theme/appTheme';
 
 const toDateKey = (date: Date) => date.toISOString().split('T')[0];
 const todayKey = toDateKey(new Date());
@@ -29,7 +30,7 @@ const formatHumanDate = (dateKey: string) => {
   });
 };
 
-const buildMarkedRange = (startDate: string, endDate: string) => {
+const buildMarkedRange = (startDate: string, endDate: string, primaryColor: string = '#2563EB') => {
   const marked: Record<string, any> = {};
   if (!startDate) {
     return marked;
@@ -40,7 +41,7 @@ const buildMarkedRange = (startDate: string, endDate: string) => {
       selected: true,
       startingDay: true,
       endingDay: true,
-      color: '#2563EB',
+      color: primaryColor,
       textColor: '#FFFFFF',
     };
     return marked;
@@ -56,7 +57,7 @@ const buildMarkedRange = (startDate: string, endDate: string) => {
       selected: true,
       startingDay: isStart,
       endingDay: isEnd,
-      color: '#2563EB',
+      color: primaryColor,
       textColor: '#FFFFFF',
     };
     cursor.setDate(cursor.getDate() + 1);
@@ -76,6 +77,7 @@ const calculateTotalDays = (startDate: string, endDate: string) => {
 };
 
 const ApplyLeaveScreen = ({ navigation }: any) => {
+  const { colors, isDark } = useAppTheme();
   const [reason, setReason] = useState('');
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherOption | null>(null);
@@ -116,7 +118,7 @@ const ApplyLeaveScreen = ({ navigation }: any) => {
 
   const totalDays = useMemo(() => calculateTotalDays(fromDate, toDate), [fromDate, toDate]);
   const canUseHalfDay = Boolean(fromDate && toDate && fromDate === toDate);
-  const markedDates = useMemo(() => buildMarkedRange(fromDate, toDate), [fromDate, toDate]);
+  const markedDates = useMemo(() => buildMarkedRange(fromDate, toDate, colors.primary), [fromDate, toDate, colors.primary]);
 
   const handleCalendarDayPress = (day: DateData) => {
     const selected = day.dateString;
@@ -208,14 +210,14 @@ const ApplyLeaveScreen = ({ navigation }: any) => {
   const leaveTypes = ['Sick Leave', 'Casual Leave', 'Emergency Leave', 'Study Leave', 'Other'];
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={styles.headerRow}>
           <AppBackButton navigation={navigation} fallbackRoute="StudentHome" />
           <View style={styles.headerSpacer} />
         </View>
-        <Text style={styles.title}>Apply for Leave</Text>
-        <Text style={styles.subtitle}>Choose date range and submit request</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Apply for Leave</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Choose date range and submit request</Text>
       </View>
 
       <View style={styles.section}>
@@ -260,22 +262,22 @@ const ApplyLeaveScreen = ({ navigation }: any) => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Date Range</Text>
-        <TouchableOpacity style={styles.dateCard} onPress={() => setCalendarVisible(true)}>
-          <Text style={styles.dateCardTitle}>Select Date Range</Text>
-          <Text style={styles.dateLine}>
+        <Text style={[styles.label, { color: colors.text }]}>Date Range</Text>
+        <TouchableOpacity style={[styles.dateCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setCalendarVisible(true)}>
+          <Text style={[styles.dateCardTitle, { color: colors.text }]}>Select Date Range</Text>
+          <Text style={[styles.dateLine, { color: colors.textSecondary }]}>
             From: {fromDate ? formatHumanDate(fromDate) : 'Not selected'}
           </Text>
-          <Text style={styles.dateLine}>To: {toDate ? formatHumanDate(toDate) : 'Not selected'}</Text>
-          <Text style={styles.totalDays}>Total Days: {totalDays || 0}</Text>
+          <Text style={[styles.dateLine, { color: colors.textSecondary }]}>To: {toDate ? formatHumanDate(toDate) : 'Not selected'}</Text>
+          <Text style={[styles.totalDays, { color: colors.primary }]}>Total Days: {totalDays || 0}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Reason for Leave</Text>
+        <Text style={[styles.label, { color: colors.text }]}>Reason for Leave</Text>
         <TextInput
           placeholder="Please provide detailed reason..."
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.textSecondary}
           value={reason}
           onChangeText={setReason}
           style={styles.reasonInput}
