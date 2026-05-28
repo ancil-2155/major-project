@@ -2,6 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import { GalleryComment, GalleryPost } from '../../types/gallery';
 import { removeUndefinedFields } from '../../utils/firestoreSanitizer';
+import { deleteMediaFromCloudinary } from '../cloudinary/cloudinaryUploadService';
 
 const GALLERY_COLLECTION = 'galleryPosts';
 
@@ -158,12 +159,33 @@ export const deleteGalleryPost = async (
     if (!isAdmin && ownerId !== userId) {
       throw new Error('You can only delete your own posts');
     }
-    
-    // Soft delete since Cloudinary media cleanup requires backend
+
+    let cloudinaryDeleteStatus = 'skipped';
+    let cloudinaryDeleteMessage: string | null = null;
+    try {
+      const deleteResult = await deleteMediaFromCloudinary(
+        postData.cloudinaryPublicId,
+        postData.cloudinaryResourceType || postData.mediaType,
+      );
+      cloudinaryDeleteStatus = deleteResult.deleted
+        ? 'deleted'
+        : deleteResult.skipped
+          ? 'skipped'
+          : 'not_deleted';
+      cloudinaryDeleteMessage = deleteResult.message || deleteResult.result || null;
+    } catch (error) {
+      cloudinaryDeleteStatus = 'failed';
+      cloudinaryDeleteMessage = error instanceof Error ? error.message : String(error);
+      console.warn('[Gallery] Cloudinary media delete failed:', cloudinaryDeleteMessage);
+    }
+
+    // Keep a tombstone for moderation/audit while removing it from all feeds.
     await postRef.update({
       status: 'deleted',
       deletedAt: firestore.FieldValue.serverTimestamp(),
       deletedBy: userId,
+      cloudinaryDeleteStatus,
+      cloudinaryDeleteMessage,
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   } catch (error) {

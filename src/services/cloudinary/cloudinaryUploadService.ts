@@ -19,6 +19,13 @@ type UploadOptions = {
   onProgress?: (progress: number) => void;
 };
 
+export type CloudinaryDeleteResult = {
+  deleted: boolean;
+  skipped: boolean;
+  result?: string;
+  message?: string;
+};
+
 const inferResourceType = (
   mimeType: string,
   preferred?: CloudinaryResourceType,
@@ -181,5 +188,49 @@ export const uploadMediaToCloudinary = async (
     height: result.height || 0,
     duration: result.duration,
     bytes: result.bytes,
+  };
+};
+
+export const deleteMediaFromCloudinary = async (
+  publicId?: string | null,
+  resourceType: 'image' | 'video' | 'raw' = 'image',
+): Promise<CloudinaryDeleteResult> => {
+  if (!publicId) {
+    return {
+      deleted: false,
+      skipped: true,
+      message: 'Cloudinary public id is missing.',
+    };
+  }
+
+  const deleteWorkerUrl = CLOUDINARY_CONFIG.deleteWorkerUrl?.trim();
+  if (!deleteWorkerUrl) {
+    return {
+      deleted: false,
+      skipped: true,
+      message: 'Cloudinary delete worker URL is not configured.',
+    };
+  }
+
+  const response = await fetch(deleteWorkerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      publicId,
+      resourceType,
+      invalidate: true,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || `Cloudinary delete failed (${response.status}).`);
+  }
+
+  return {
+    deleted: payload?.result === 'ok' || payload?.deleted === true,
+    skipped: false,
+    result: payload?.result,
+    message: payload?.message,
   };
 };
